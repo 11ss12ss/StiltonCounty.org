@@ -6,12 +6,6 @@
 <title>Stilton County Community — Official City Portal</title>
 <link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@300;400;700&family=Source+Sans+3:wght@300;400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
 
-<!-- ============================================================
-     FIREBASE SDK
-     Replace the config object below with your own project's
-     credentials from the Firebase Console:
-     https://console.firebase.google.com/
-============================================================ -->
 <script type="module">
   import { initializeApp }      from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getFirestore,
@@ -20,25 +14,23 @@
            serverTimestamp, query,
            orderBy }            from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-  // ── REPLACE THIS BLOCK WITH YOUR FIREBASE CONFIG ──────────────
   const firebaseConfig = {
     apiKey: "AIzaSyAeHalvnX8C5SIbao3EEMK8j5lg5ungr70",
-  authDomain: "scrps-9e40a.firebaseapp.com",
-  projectId: "scrps-9e40a",
-  storageBucket: "scrps-9e40a.firebasestorage.app",
-  messagingSenderId: "56591407649",
-  appId: "1:56591407649:web:8ba0aa87a4ece3d2486160",
+    authDomain: "scrps-9e40a.firebaseapp.com",
+    projectId: "scrps-9e40a",
+    storageBucket: "scrps-9e40a.firebasestorage.app",
+    messagingSenderId: "56591407649",
+    appId: "1:56591407649:web:8ba0aa87a4ece3d2486160",
   };
-  // ──────────────────────────────────────────────────────────────
 
   const app = initializeApp(firebaseConfig);
   const db  = getFirestore(app);
 
   // ── STAFF PIN ─────────────────────────────────────────────────
-  // Change this to whatever PIN you want staff to use
   const STAFF_PIN = "11223344";
   // ──────────────────────────────────────────────────────────────
 
+  // pendingAction can be: 'ann' | 'evt' | 'emer' | {type:'del', col:'announcements'|'events'|'emergencies', id:string}
   let pendingAction = null;
 
   // ── CLOCK ─────────────────────────────────────────────────────
@@ -77,17 +69,45 @@
     pendingAction = action;
     document.getElementById("pin-input").value = "";
     document.getElementById("pin-err").style.display = "none";
+
+    // Update pin modal subtitle based on action type
+    const subtitle = document.getElementById("pin-subtitle");
+    if (action && action.type === 'del') {
+      subtitle.textContent = "Enter your staff PIN to remove this item";
+    } else {
+      subtitle.textContent = "Enter your staff PIN to access this function";
+    }
+
     openOverlay("pin-overlay");
     setTimeout(() => document.getElementById("pin-input").focus(), 120);
   };
 
-  window.verifyPin = function() {
+  window.verifyPin = async function() {
     const val = document.getElementById("pin-input").value;
     if (val === STAFF_PIN) {
       closeOverlay("pin-overlay");
-      if (pendingAction === "ann")  openOverlay("ann-overlay");
-      if (pendingAction === "evt")  openOverlay("evt-overlay");
-      if (pendingAction === "emer") openOverlay("emer-overlay");
+      const action = pendingAction;
+      pendingAction = null;
+
+      if (action === "ann")  { openOverlay("ann-overlay"); return; }
+      if (action === "evt")  { openOverlay("evt-overlay"); return; }
+      if (action === "emer") { openOverlay("emer-overlay"); return; }
+
+      // Handle delete actions
+      if (action && action.type === 'del') {
+        const confirmMsg = {
+          announcements: "Remove this announcement?",
+          events: "Remove this event?",
+          emergencies: "Resolve and remove this alert?"
+        }[action.col] || "Remove this item?";
+
+        if (!confirm(confirmMsg)) return;
+        try {
+          await deleteDoc(doc(db, action.col, action.id));
+        } catch(err) {
+          alert("Error removing item: " + err.message);
+        }
+      }
     } else {
       document.getElementById("pin-err").style.display = "block";
       document.getElementById("pin-input").value = "";
@@ -143,7 +163,9 @@
             <span class="ann-tag ${tagClass(d.type)}">${typeLabel(d.type)}</span>
             <span class="ann-date">${fmtTs(d.createdAt)}</span>
           </div>
-          <button class="del-btn" style="float:right;margin-top:-26px;" onclick="deleteAnn('${id}')">Remove</button>
+          <button class="del-btn" style="float:right;margin-top:-26px;" onclick="openPinModal({type:'del',col:'announcements',id:'${id}'})">
+            <span class="del-lock-icon">🔒</span> Remove
+          </button>
           <h3>${esc(d.title)}</h3>
           <p>${esc(d.body)}</p>
           <div class="ann-footer">
@@ -170,11 +192,6 @@
     } catch(err) { alert("Error saving announcement: " + err.message); }
   };
 
-  window.deleteAnn = async function(id) {
-    if (!confirm("Remove this announcement?")) return;
-    await deleteDoc(doc(db,"announcements",id));
-  };
-
   // ── EVENTS ────────────────────────────────────────────────────
   function renderEvt(snap) {
     const list = document.getElementById("evt-list");
@@ -199,7 +216,9 @@
             <div class="evt-cal-day">${day}</div>
           </div>
           <div class="evt-body" style="flex:1">
-            <button class="del-btn" style="float:right;" onclick="deleteEvt('${id}')">Remove</button>
+            <button class="del-btn" style="float:right;" onclick="openPinModal({type:'del',col:'events',id:'${id}'})">
+              <span class="del-lock-icon">🔒</span> Remove
+            </button>
             <h3>${esc(d.title)}</h3>
             <p>${esc(d.desc || "No description provided.")}</p>
             <div class="evt-meta">
@@ -228,11 +247,6 @@
     } catch(err) { alert("Error saving event: " + err.message); }
   };
 
-  window.deleteEvt = async function(id) {
-    if (!confirm("Remove this event?")) return;
-    await deleteDoc(doc(db,"events",id));
-  };
-
   // ── EMERGENCY ─────────────────────────────────────────────────
   function renderEmer(snap) {
     const list = document.getElementById("emer-list");
@@ -255,7 +269,9 @@
           <p>${esc(d.body || "No additional details. Contact emergency services.")}</p>
           <div class="emer-card-footer">
             <span>ISSUED BY: ${esc((d.author||"Stilton County Emergency Services").toUpperCase())}</span>
-            <button class="del-btn" onclick="deleteEmer('${id}')">Resolve &amp; Remove</button>
+            <button class="del-btn" onclick="openPinModal({type:'del',col:'emergencies',id:'${id}'})">
+              <span class="del-lock-icon">🔒</span> Resolve &amp; Remove
+            </button>
           </div>
         </div>`);
     });
@@ -275,11 +291,6 @@
       closeOverlay("emer-overlay");
       clearFields(["emer-title","emer-body","emer-author"]);
     } catch(err) { alert("Error issuing alert: " + err.message); }
-  };
-
-  window.deleteEmer = async function(id) {
-    if (!confirm("Resolve and remove this alert?")) return;
-    await deleteDoc(doc(db,"emergencies",id));
   };
 </script>
 
@@ -529,12 +540,15 @@ header {
 .add-btn-gold:hover { background: #a5751f; border-color: #a5751f; }
 .add-btn-red  { background: var(--red); border-color: var(--red); color: #fff; }
 .add-btn-red:hover  { background: #991b1b; border-color: #991b1b; }
+
 .del-btn {
   font-size: .65rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
   background: none; border: 1px solid var(--gray-2); color: var(--gray-3);
   padding: .2rem .5rem; border-radius: 3px; cursor: pointer; transition: all .18s;
+  display: inline-flex; align-items: center; gap: .25rem;
 }
 .del-btn:hover { border-color: var(--red); color: var(--red); background: var(--red-bg); }
+.del-lock-icon { font-size: .65rem; line-height: 1; }
 
 /* MODALS */
 .overlay {
@@ -560,6 +574,16 @@ header {
 .modal-body { padding: 1.5rem; }
 .modal-head.red-head { background: var(--red); }
 
+/* PIN MODAL LOCK ICON */
+.pin-lock-graphic {
+  text-align: center; padding: .8rem 0 1rem;
+  font-size: 2rem; line-height: 1;
+}
+.pin-modal-note {
+  font-size: .73rem; color: var(--gray-3); text-align: center;
+  margin-bottom: 1rem; line-height: 1.5;
+}
+
 /* FORM */
 .form-group { margin-bottom: 1rem; }
 label { display: block; font-size: .73rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--navy); margin-bottom: .35rem; }
@@ -569,7 +593,7 @@ input[type="text"], input[type="password"], input[type="date"], input[type="time
   font-size: .9rem; padding: .55rem .85rem; outline: none; transition: border-color .18s, box-shadow .18s;
 }
 input:focus, textarea:focus, select:focus { border-color: var(--blue-l); box-shadow: 0 0 0 3px rgba(46,111,212,.12); background: #fff; }
-input[type="password"] { font-family: var(--mono); letter-spacing: .3em; }
+input[type="password"] { font-family: var(--mono); letter-spacing: .3em; font-size: 1.1rem; }
 textarea { resize: vertical; min-height: 80px; }
 .form-row { display: flex; gap: .75rem; }
 .form-row .form-group { flex: 1; }
@@ -581,7 +605,7 @@ textarea { resize: vertical; min-height: 80px; }
 .btn-gold:hover { background: #a5751f; }
 .btn-red { background: var(--red); color: #fff; }
 .btn-red:hover { background: #991b1b; }
-.pin-err { font-size: .74rem; color: var(--red); display: none; margin-top: .35rem; font-weight: 600; }
+.pin-err { font-size: .74rem; color: var(--red); display: none; margin-top: .35rem; font-weight: 600; background: var(--red-bg); padding: .4rem .6rem; border-radius: 3px; border: 1px solid #fca5a5; }
 
 /* MISC */
 .empty-state { text-align: center; padding: 2.5rem 1rem; color: var(--gray-3); font-size: .85rem; }
@@ -794,17 +818,19 @@ footer strong { color: #9ab0d0; }
     <div class="modal-head">
       <div class="modal-head-text">
         <h2>Staff Authentication Required</h2>
-        <p>Enter your staff PIN to access this function</p>
+        <p id="pin-subtitle">Enter your staff PIN to access this function</p>
       </div>
       <button class="modal-close" onclick="closeOverlay('pin-overlay')">&#x2715;</button>
     </div>
     <div class="modal-body">
+      <div class="pin-lock-graphic">🔐</div>
+      <p class="pin-modal-note">This action is restricted to authorized staff only.<br>Enter your PIN to continue.</p>
       <div class="form-group">
         <label>Staff Access PIN</label>
-        <input type="password" id="pin-input" placeholder="Enter PIN" maxlength="16" onkeydown="if(event.key==='Enter')verifyPin()">
-        <div class="pin-err" id="pin-err">Incorrect PIN. Please try again.</div>
+        <input type="password" id="pin-input" placeholder="••••••••" maxlength="16" onkeydown="if(event.key==='Enter')verifyPin()">
+        <div class="pin-err" id="pin-err">⚠ Incorrect PIN. Please try again.</div>
       </div>
-      <button class="submit-btn btn-primary" onclick="verifyPin()">Verify Identity and Continue</button>
+      <button class="submit-btn btn-primary" onclick="verifyPin()">Verify &amp; Continue</button>
     </div>
   </div>
 </div>
