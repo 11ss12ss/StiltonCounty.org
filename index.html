@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stilton County Community — Official City Portal</title>
+<link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@300;400;700&family=Source+Sans+3:wght@300;400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<!-- ============================================================
+     FIREBASE SDK
+     Replace the config object below with your own project's
+     credentials from the Firebase Console:
+     https://console.firebase.google.com/
+============================================================ -->
+<script type="module">
+  import { initializeApp }      from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore,
+           collection, addDoc, deleteDoc,
+           doc, onSnapshot,
+           serverTimestamp, query,
+           orderBy }            from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  // ── REPLACE THIS BLOCK WITH YOUR FIREBASE CONFIG ──────────────
+  const firebaseConfig = {
+    apiKey: "AIzaSyAeHalvnX8C5SIbao3EEMK8j5lg5ungr70",
+  authDomain: "scrps-9e40a.firebaseapp.com",
+  projectId: "scrps-9e40a",
+  storageBucket: "scrps-9e40a.firebasestorage.app",
+  messagingSenderId: "56591407649",
+  appId: "1:56591407649:web:8ba0aa87a4ece3d2486160",
+  };
+  // ──────────────────────────────────────────────────────────────
+
+  const app = initializeApp(firebaseConfig);
+  const db  = getFirestore(app);
+
+  // ── STAFF PIN ─────────────────────────────────────────────────
+  // Change this to whatever PIN you want staff to use
+  const STAFF_PIN = "11223344";
+  // ──────────────────────────────────────────────────────────────
+
+  let pendingAction = null;
+
+  // ── CLOCK ─────────────────────────────────────────────────────
+  function tick() {
+    const d = new Date();
+    const el = document.getElementById("clockDisplay");
+    if (el) el.textContent =
+      d.toLocaleDateString("en-US", {weekday:"short",month:"short",day:"numeric",year:"numeric"})
+      + "  " +
+      d.toLocaleTimeString("en-US", {hour:"2-digit",minute:"2-digit",second:"2-digit"});
+  }
+  setInterval(tick, 1000); tick();
+
+  const lu = document.getElementById("last-updated");
+  if (lu) lu.textContent = new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});
+
+  // ── PAGE SWITCHING ────────────────────────────────────────────
+  window.showPage = function(name) {
+    document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
+    document.querySelectorAll(".nav-tab").forEach(t => t.classList.remove("active"));
+    document.getElementById("page-" + name).classList.add("active");
+    document.getElementById("tab-" + name).classList.add("active");
+    window.scrollTo({top:0, behavior:"smooth"});
+  };
+
+  // ── OVERLAYS ──────────────────────────────────────────────────
+  window.openOverlay = function(id) { document.getElementById(id).classList.add("open"); };
+  window.closeOverlay = function(id) { document.getElementById(id).classList.remove("open"); };
+
+  document.querySelectorAll(".overlay").forEach(o => {
+    o.addEventListener("click", e => { if (e.target === o) o.classList.remove("open"); });
+  });
+
+  // ── PIN ───────────────────────────────────────────────────────
+  window.openPinModal = function(action) {
+    pendingAction = action;
+    document.getElementById("pin-input").value = "";
+    document.getElementById("pin-err").style.display = "none";
+    openOverlay("pin-overlay");
+    setTimeout(() => document.getElementById("pin-input").focus(), 120);
+  };
+
+  window.verifyPin = function() {
+    const val = document.getElementById("pin-input").value;
+    if (val === STAFF_PIN) {
+      closeOverlay("pin-overlay");
+      if (pendingAction === "ann")  openOverlay("ann-overlay");
+      if (pendingAction === "evt")  openOverlay("evt-overlay");
+      if (pendingAction === "emer") openOverlay("emer-overlay");
+    } else {
+      document.getElementById("pin-err").style.display = "block";
+      document.getElementById("pin-input").value = "";
+      document.getElementById("pin-input").focus();
+    }
+  };
+
+  // ── UTILS ─────────────────────────────────────────────────────
+  function esc(s) {
+    return String(s)
+      .replace(/&/g,"&amp;").replace(/</g,"&lt;")
+      .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+  function fmtTime(t) {
+    if (!t) return "TBD";
+    const [h, m] = t.split(":");
+    const hr = +h % 12 || 12;
+    return `${hr}:${m} ${+h < 12 ? "AM" : "PM"}`;
+  }
+  function fmtTs(ts) {
+    if (!ts) return "";
+    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    return d.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric",hour:"2-digit",minute:"2-digit"});
+  }
+  function clearFields(ids) {
+    ids.forEach(id => { const e = document.getElementById(id); if (e) e.value = ""; });
+  }
+
+  // ── ANNOUNCEMENTS ─────────────────────────────────────────────
+  function tagClass(type) {
+    return {NOTICE:"tag-notice", UPDATE:"tag-update", RULE:"tag-rule"}[type] || "tag-info";
+  }
+  function cardClass(type) {
+    return {NOTICE:"type-notice", UPDATE:"type-update", RULE:"type-rule"}[type] || "";
+  }
+  function typeLabel(type) {
+    return {NOTICE:"Public Notice", UPDATE:"Server Update", RULE:"Rule Change"}[type] || "Information";
+  }
+
+  function renderAnn(snap) {
+    const list = document.getElementById("ann-list");
+    list.innerHTML = "";
+    if (snap.empty) {
+      list.innerHTML = `<div class="empty-state"><div class="empty-icon-text">[ No announcements yet ]</div>No announcements have been posted.</div>`;
+      return;
+    }
+    snap.forEach(docSnap => {
+      const d = docSnap.data();
+      const id = docSnap.id;
+      list.insertAdjacentHTML("beforeend", `
+        <div class="ann-card ${cardClass(d.type)}" style="animation:pgIn .3s ease">
+          <div class="ann-top">
+            <span class="ann-tag ${tagClass(d.type)}">${typeLabel(d.type)}</span>
+            <span class="ann-date">${fmtTs(d.createdAt)}</span>
+          </div>
+          <button class="del-btn" style="float:right;margin-top:-26px;" onclick="deleteAnn('${id}')">Remove</button>
+          <h3>${esc(d.title)}</h3>
+          <p>${esc(d.body)}</p>
+          <div class="ann-footer">
+            <span>POSTED BY: ${esc((d.author||"Server Administration").toUpperCase())}</span>
+            <span>STILTON COUNTY OFFICIAL</span>
+          </div>
+        </div>`);
+    });
+  }
+
+  const annQ = query(collection(db,"announcements"), orderBy("createdAt","desc"));
+  onSnapshot(annQ, renderAnn);
+
+  window.submitAnn = async function() {
+    const type   = document.getElementById("ann-type").value;
+    const title  = document.getElementById("ann-title").value.trim();
+    const body   = document.getElementById("ann-body").value.trim();
+    const author = document.getElementById("ann-author").value.trim() || "Server Administration";
+    if (!title || !body) { alert("Please fill in the title and body."); return; }
+    try {
+      await addDoc(collection(db,"announcements"), { type, title, body, author, createdAt: serverTimestamp() });
+      closeOverlay("ann-overlay");
+      clearFields(["ann-title","ann-body","ann-author"]);
+    } catch(err) { alert("Error saving announcement: " + err.message); }
+  };
+
+  window.deleteAnn = async function(id) {
+    if (!confirm("Remove this announcement?")) return;
+    await deleteDoc(doc(db,"announcements",id));
+  };
+
+  // ── EVENTS ────────────────────────────────────────────────────
+  function renderEvt(snap) {
+    const list = document.getElementById("evt-list");
+    list.innerHTML = "";
+    if (snap.empty) {
+      list.innerHTML = `<div class="empty-state"><div class="empty-icon-text">[ No events scheduled ]</div>No upcoming events have been posted yet. Check back soon.</div>`;
+      return;
+    }
+    snap.forEach(docSnap => {
+      const d = docSnap.data();
+      const id = docSnap.id;
+      let month = "TBA", day = "--";
+      if (d.date) {
+        const dt = new Date(d.date + "T12:00:00");
+        month = dt.toLocaleString("en-US",{month:"short"}).toUpperCase();
+        day   = dt.getDate();
+      }
+      list.insertAdjacentHTML("beforeend", `
+        <div class="evt-card" style="animation:pgIn .3s ease">
+          <div class="evt-cal">
+            <div class="evt-cal-month">${month}</div>
+            <div class="evt-cal-day">${day}</div>
+          </div>
+          <div class="evt-body" style="flex:1">
+            <button class="del-btn" style="float:right;" onclick="deleteEvt('${id}')">Remove</button>
+            <h3>${esc(d.title)}</h3>
+            <p>${esc(d.desc || "No description provided.")}</p>
+            <div class="evt-meta">
+              <span>Location: ${esc(d.location || "Stilton County")}</span>
+              <span>Time: ${fmtTime(d.time)}</span>
+            </div>
+          </div>
+        </div>`);
+    });
+  }
+
+  const evtQ = query(collection(db,"events"), orderBy("createdAt","desc"));
+  onSnapshot(evtQ, renderEvt);
+
+  window.submitEvt = async function() {
+    const title    = document.getElementById("evt-title").value.trim();
+    const desc     = document.getElementById("evt-desc").value.trim();
+    const date     = document.getElementById("evt-date").value;
+    const time     = document.getElementById("evt-time").value;
+    const location = document.getElementById("evt-loc").value.trim() || "Stilton County";
+    if (!title) { alert("Please enter an event name."); return; }
+    try {
+      await addDoc(collection(db,"events"), { title, desc, date, time, location, createdAt: serverTimestamp() });
+      closeOverlay("evt-overlay");
+      clearFields(["evt-title","evt-desc","evt-date","evt-time","evt-loc"]);
+    } catch(err) { alert("Error saving event: " + err.message); }
+  };
+
+  window.deleteEvt = async function(id) {
+    if (!confirm("Remove this event?")) return;
+    await deleteDoc(doc(db,"events",id));
+  };
+
+  // ── EMERGENCY ─────────────────────────────────────────────────
+  function renderEmer(snap) {
+    const list = document.getElementById("emer-list");
+    list.innerHTML = "";
+    const hasAlerts = !snap.empty;
+    document.getElementById("all-clear-msg").style.display    = hasAlerts ? "none" : "flex";
+    document.getElementById("active-alert-msg").style.display = hasAlerts ? "flex" : "none";
+    if (!hasAlerts) return;
+    snap.forEach(docSnap => {
+      const d   = docSnap.data();
+      const id  = docSnap.id;
+      const adv = d.level === "ADVISORY";
+      list.insertAdjacentHTML("beforeend", `
+        <div class="emer-card ${adv ? "advisory" : ""}" style="animation:pgIn .3s ease">
+          <div class="emer-card-top">
+            <span class="emer-badge ${adv ? "badge-adv" : "badge-emer"}">${adv ? "ADVISORY" : "EMERGENCY"}</span>
+            <span style="font-size:.7rem;color:var(--gray-3);font-family:var(--mono);">${fmtTs(d.createdAt)}</span>
+          </div>
+          <h3>${esc(d.title)}</h3>
+          <p>${esc(d.body || "No additional details. Contact emergency services.")}</p>
+          <div class="emer-card-footer">
+            <span>ISSUED BY: ${esc((d.author||"Stilton County Emergency Services").toUpperCase())}</span>
+            <button class="del-btn" onclick="deleteEmer('${id}')">Resolve &amp; Remove</button>
+          </div>
+        </div>`);
+    });
+  }
+
+  const emerQ = query(collection(db,"emergencies"), orderBy("createdAt","desc"));
+  onSnapshot(emerQ, renderEmer);
+
+  window.submitEmer = async function() {
+    const level  = document.getElementById("emer-level").value;
+    const title  = document.getElementById("emer-title").value.trim();
+    const body   = document.getElementById("emer-body").value.trim();
+    const author = document.getElementById("emer-author").value.trim() || "Stilton County Emergency Services";
+    if (!title) { alert("Please enter an alert title."); return; }
+    try {
+      await addDoc(collection(db,"emergencies"), { level, title, body, author, createdAt: serverTimestamp() });
+      closeOverlay("emer-overlay");
+      clearFields(["emer-title","emer-body","emer-author"]);
+    } catch(err) { alert("Error issuing alert: " + err.message); }
+  };
+
+  window.deleteEmer = async function(id) {
+    if (!confirm("Resolve and remove this alert?")) return;
+    await deleteDoc(doc(db,"emergencies",id));
+  };
+</script>
+
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --navy:       #1a2744;
+  --navy-d:     #111c33;
+  --navy-m:     #223060;
+  --blue:       #2155a3;
+  --blue-l:     #2e6fd4;
+  --sky:        #e8f0fb;
+  --gold:       #c8922a;
+  --gold-l:     #f5c762;
+  --red:        #b91c1c;
+  --red-bg:     #fef2f2;
+  --orange:     #c2410c;
+  --orange-bg:  #fff7ed;
+  --green:      #15803d;
+  --green-bg:   #f0fdf4;
+  --gray-1:     #f4f6fa;
+  --gray-2:     #e2e8f0;
+  --gray-3:     #94a3b8;
+  --gray-4:     #475569;
+  --text:       #1e293b;
+  --white:      #ffffff;
+  --serif:      'Merriweather', Georgia, serif;
+  --sans:       'Source Sans 3', sans-serif;
+  --mono:       'Roboto Mono', monospace;
+  --shadow:     0 1px 3px rgba(0,0,0,.10), 0 4px 12px rgba(0,0,0,.06);
+  --shadow-m:   0 4px 16px rgba(0,0,0,.12), 0 1px 4px rgba(0,0,0,.08);
+}
+
+html { scroll-behavior: smooth; }
+body { font-family: var(--sans); color: var(--text); background: var(--gray-1); font-size: 15px; line-height: 1.6; }
+
+/* UTILITY BAR */
+.utility-bar {
+  background: var(--navy-d); color: #9ab0d0;
+  font-size: .72rem; letter-spacing: .03em;
+  padding: 0 2rem; display: flex; align-items: center;
+  justify-content: space-between; gap: 1rem; height: 32px;
+}
+.utility-bar a { color: #9ab0d0; text-decoration: none; }
+.utility-bar a:hover { color: #fff; }
+.utility-links { display: flex; gap: 1.4rem; align-items: center; }
+.utility-links span { color: #3d5070; }
+.utility-clock { font-family: var(--mono); font-size: .68rem; color: #6a8aaa; }
+
+/* HEADER */
+header {
+  background: var(--white); border-bottom: 1px solid var(--gray-2);
+  box-shadow: var(--shadow); position: sticky; top: 0; z-index: 100;
+}
+.header-main {
+  max-width: 1200px; margin: 0 auto;
+  padding: 1rem 2rem; display: flex; align-items: center; gap: 1.4rem;
+}
+.city-seal { flex-shrink: 0; width: 68px; height: 68px; }
+.header-wordmark { flex: 1; }
+.wordmark-city {
+  font-family: var(--serif); font-size: 1.55rem; font-weight: 700;
+  color: var(--navy); line-height: 1.1; letter-spacing: -.01em;
+}
+.wordmark-city em { font-style: normal; color: var(--blue); }
+.wordmark-sub {
+  font-size: .72rem; color: var(--gray-3); letter-spacing: .12em;
+  text-transform: uppercase; margin-top: .15rem; font-weight: 600;
+}
+.header-right { display: flex; flex-direction: column; align-items: flex-end; gap: .5rem; }
+.server-status {
+  display: inline-flex; align-items: center; gap: .4rem;
+  font-size: .7rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--green); background: var(--green-bg); border: 1px solid #bbf7d0;
+  border-radius: 20px; padding: .2rem .7rem;
+}
+.status-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--green); animation: pulse 1.8s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+/* NAV */
+.nav-bar { background: var(--navy); border-bottom: 3px solid var(--gold); }
+.nav-inner { max-width: 1200px; margin: 0 auto; padding: 0 2rem; display: flex; align-items: stretch; }
+.nav-tab {
+  background: none; border: none; color: #b0c4e0;
+  font-family: var(--sans); font-size: .82rem; font-weight: 600;
+  letter-spacing: .06em; text-transform: uppercase;
+  padding: .85rem 1.4rem; cursor: pointer;
+  border-bottom: 3px solid transparent; margin-bottom: -3px;
+  transition: color .18s, background .18s, border-color .18s;
+  white-space: nowrap;
+}
+.nav-tab:hover { color: #fff; background: rgba(255,255,255,.06); }
+.nav-tab.active { color: #fff; border-bottom-color: var(--gold); background: rgba(255,255,255,.08); }
+
+/* HERO */
+.hero-band {
+  background: linear-gradient(135deg, var(--navy) 0%, var(--navy-m) 60%, #1e3a6a 100%);
+  color: #fff; padding: 2.8rem 2rem 2.4rem; position: relative; overflow: hidden;
+}
+.hero-band::before {
+  content: ''; position: absolute; right: -60px; top: -60px;
+  width: 340px; height: 340px; border-radius: 50%;
+  border: 40px solid rgba(255,255,255,.03);
+}
+.hero-band::after {
+  content: ''; position: absolute; right: 60px; bottom: -80px;
+  width: 220px; height: 220px; border-radius: 50%;
+  border: 30px solid rgba(200,146,42,.07);
+}
+.hero-inner { max-width: 1200px; margin: 0 auto; position: relative; z-index: 1; }
+.hero-eyebrow {
+  font-size: .7rem; font-weight: 600; letter-spacing: .2em; text-transform: uppercase;
+  color: var(--gold-l); margin-bottom: .5rem; display: flex; align-items: center; gap: .5rem;
+}
+.hero-eyebrow::before { content:''; display:inline-block; width:24px; height:2px; background:var(--gold); }
+.hero-inner h1 { font-family: var(--serif); font-size: 2rem; font-weight: 700; line-height: 1.2; margin-bottom: .6rem; }
+.hero-inner p { font-size: .95rem; color: #9ab0d0; font-weight: 300; max-width: 520px; }
+
+/* PAGES */
+.page { display: none; }
+.page.active { display: block; animation: pgIn .25s ease; }
+@keyframes pgIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+
+.page-body {
+  max-width: 1200px; margin: 0 auto;
+  padding: 2rem 2rem 4rem;
+  display: grid; grid-template-columns: 1fr 300px; gap: 2rem; align-items: start;
+}
+
+/* SECTION LABEL */
+.section-label {
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 2px solid var(--navy); padding-bottom: .5rem; margin-bottom: 1.4rem;
+}
+.section-label h2 { font-family: var(--serif); font-size: 1.15rem; font-weight: 700; color: var(--navy); }
+
+/* ANN CARDS */
+.ann-card {
+  background: var(--white); border: 1px solid var(--gray-2); border-left: 4px solid var(--blue);
+  border-radius: 6px; padding: 1.3rem 1.5rem; margin-bottom: 1rem;
+  box-shadow: var(--shadow); transition: box-shadow .2s, border-color .2s;
+}
+.ann-card:hover { box-shadow: var(--shadow-m); }
+.ann-card.type-notice { border-left-color: var(--gold); }
+.ann-card.type-update { border-left-color: var(--green); }
+.ann-card.type-rule   { border-left-color: var(--red); }
+.ann-top { display: flex; align-items: center; gap: .6rem; margin-bottom: .55rem; flex-wrap: wrap; }
+.ann-tag {
+  font-size: .62rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  padding: .18rem .55rem; border-radius: 3px;
+}
+.tag-info   { background: #dbeafe; color: #1e40af; }
+.tag-notice { background: #fef3c7; color: #92400e; }
+.tag-update { background: var(--green-bg); color: #166534; }
+.tag-rule   { background: var(--red-bg); color: #991b1b; }
+.ann-date { font-size: .7rem; color: var(--gray-3); font-family: var(--mono); margin-left: auto; }
+.ann-card h3 { font-family: var(--serif); font-size: 1rem; font-weight: 700; color: var(--navy); margin-bottom: .35rem; line-height: 1.35; }
+.ann-card p  { font-size: .88rem; color: var(--gray-4); line-height: 1.65; font-weight: 300; }
+.ann-footer {
+  margin-top: .8rem; padding-top: .6rem; border-top: 1px solid var(--gray-2);
+  font-size: .68rem; color: var(--gray-3); letter-spacing: .06em;
+  display: flex; align-items: center; justify-content: space-between;
+}
+
+/* EVT CARDS */
+.evt-card {
+  background: var(--white); border: 1px solid var(--gray-2); border-radius: 6px;
+  padding: 1.3rem 1.5rem; margin-bottom: 1rem;
+  box-shadow: var(--shadow); display: flex; gap: 1.2rem; transition: box-shadow .2s;
+}
+.evt-card:hover { box-shadow: var(--shadow-m); }
+.evt-cal { flex-shrink: 0; width: 56px; border-radius: 6px; overflow: hidden; border: 1px solid var(--gray-2); text-align: center; }
+.evt-cal-month { background: var(--navy); color: #fff; font-size: .6rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; padding: .2rem 0; }
+.evt-cal-day   { font-family: var(--serif); font-size: 1.7rem; font-weight: 700; color: var(--navy); line-height: 1; padding: .3rem 0; }
+.evt-body h3 { font-family: var(--serif); font-size: 1rem; font-weight: 700; color: var(--navy); margin-bottom: .3rem; }
+.evt-body p  { font-size: .85rem; color: var(--gray-4); line-height: 1.6; font-weight: 300; }
+.evt-meta { display: flex; gap: 1rem; margin-top: .55rem; flex-wrap: wrap; }
+.evt-meta span { font-size: .72rem; color: var(--gray-3); }
+
+/* SIDEBAR */
+.widget { background: var(--white); border: 1px solid var(--gray-2); border-radius: 6px; overflow: hidden; box-shadow: var(--shadow); margin-bottom: 1.2rem; }
+.widget-header { background: var(--navy); color: #fff; font-size: .72rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; padding: .6rem 1rem; }
+.widget-body { padding: 1rem; }
+.widget-body p { font-size: .82rem; color: var(--gray-4); line-height: 1.6; }
+.quick-link {
+  display: flex; align-items: center; gap: .6rem; padding: .55rem 0;
+  border-bottom: 1px solid var(--gray-2); font-size: .83rem; color: var(--blue); font-weight: 500;
+}
+.quick-link:last-child { border-bottom: none; }
+.quick-link-icon { width: 28px; height: 28px; border-radius: 4px; background: var(--sky); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.quick-link-icon svg { width: 14px; height: 14px; stroke: var(--blue); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* EMERGENCY */
+.emer-status-bar { max-width: 1200px; margin: 1.5rem auto 0; padding: 0 2rem; }
+.all-clear-box {
+  background: var(--green-bg); border: 1px solid #bbf7d0; border-left: 5px solid var(--green);
+  border-radius: 6px; padding: 1.2rem 1.5rem; display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem;
+}
+.all-clear-box h3 { font-family: var(--serif); font-size: 1rem; color: var(--green); font-weight: 700; }
+.all-clear-box p  { font-size: .82rem; color: #166534; }
+.active-alert-box {
+  background: var(--red-bg); border: 1px solid #fecaca; border-left: 5px solid var(--red);
+  border-radius: 6px; padding: 1.2rem 1.5rem; display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem;
+}
+.active-alert-box h3 { font-family: var(--serif); font-size: 1rem; color: var(--red); font-weight: 700; }
+.active-alert-box p  { font-size: .82rem; color: #7f1d1d; }
+.status-icon { width: 36px; height: 36px; flex-shrink: 0; }
+.status-icon svg { width: 100%; height: 100%; }
+
+.emer-cards-area { max-width: 1200px; margin: 0 auto; padding: 0 2rem 3rem; }
+.emer-card {
+  background: var(--white); border: 1px solid #fecaca; border-left: 5px solid var(--red);
+  border-radius: 6px; padding: 1.3rem 1.5rem; margin-bottom: 1rem; box-shadow: var(--shadow);
+}
+.emer-card.advisory { border-color: #fed7aa; border-left-color: var(--orange); }
+.emer-card-top { display: flex; align-items: center; gap: .7rem; margin-bottom: .5rem; flex-wrap: wrap; }
+.emer-badge {
+  font-size: .62rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  padding: .2rem .6rem; border-radius: 3px;
+}
+.badge-emer { background: var(--red-bg); color: var(--red); border: 1px solid #fca5a5; }
+.badge-adv  { background: var(--orange-bg); color: var(--orange); border: 1px solid #fdba74; }
+.emer-card h3   { font-family: var(--serif); font-size: 1rem; font-weight: 700; color: var(--red); margin-bottom: .35rem; }
+.emer-card.advisory h3 { color: var(--orange); }
+.emer-card p    { font-size: .87rem; color: var(--gray-4); line-height: 1.6; }
+.emer-card-footer {
+  margin-top: .8rem; padding-top: .6rem; border-top: 1px solid var(--gray-2);
+  font-size: .68rem; color: var(--gray-3); letter-spacing: .04em;
+  display: flex; justify-content: space-between; align-items: center;
+}
+
+/* BUTTONS */
+.add-btn {
+  display: inline-flex; align-items: center; gap: .4rem;
+  font-family: var(--sans); font-size: .78rem; font-weight: 700;
+  letter-spacing: .06em; text-transform: uppercase;
+  padding: .5rem 1rem; border-radius: 4px; cursor: pointer; border: 1.5px solid;
+  transition: background .2s, color .2s, box-shadow .2s;
+}
+.add-btn-blue { background: var(--blue); border-color: var(--blue); color: #fff; }
+.add-btn-blue:hover { background: var(--navy); border-color: var(--navy); }
+.add-btn-gold { background: var(--gold); border-color: var(--gold); color: #fff; }
+.add-btn-gold:hover { background: #a5751f; border-color: #a5751f; }
+.add-btn-red  { background: var(--red); border-color: var(--red); color: #fff; }
+.add-btn-red:hover  { background: #991b1b; border-color: #991b1b; }
+.del-btn {
+  font-size: .65rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  background: none; border: 1px solid var(--gray-2); color: var(--gray-3);
+  padding: .2rem .5rem; border-radius: 3px; cursor: pointer; transition: all .18s;
+}
+.del-btn:hover { border-color: var(--red); color: var(--red); background: var(--red-bg); }
+
+/* MODALS */
+.overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(15,25,50,.65); z-index: 200;
+  align-items: center; justify-content: center; backdrop-filter: blur(3px);
+}
+.overlay.open { display: flex; }
+.modal { background: var(--white); border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,.3); width: 100%; max-width: 480px; overflow: hidden; animation: mIn .22s ease; }
+@keyframes mIn { from{opacity:0;transform:translateY(-14px) scale(.97)} to{opacity:1;transform:none} }
+.modal-head {
+  background: var(--navy); color: #fff;
+  padding: 1.2rem 1.5rem; display: flex; align-items: flex-start; justify-content: space-between;
+}
+.modal-head-text h2 { font-family: var(--serif); font-size: 1rem; font-weight: 700; }
+.modal-head-text p  { font-size: .72rem; color: #7a9ec4; margin-top: .15rem; font-weight: 300; }
+.modal-close {
+  background: rgba(255,255,255,.1); border: none; color: #fff;
+  width: 28px; height: 28px; border-radius: 50%; font-size: 1rem; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: background .18s;
+}
+.modal-close:hover { background: rgba(255,255,255,.22); }
+.modal-body { padding: 1.5rem; }
+.modal-head.red-head { background: var(--red); }
+
+/* FORM */
+.form-group { margin-bottom: 1rem; }
+label { display: block; font-size: .73rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--navy); margin-bottom: .35rem; }
+input[type="text"], input[type="password"], input[type="date"], input[type="time"], textarea, select {
+  width: 100%; background: var(--gray-1); border: 1px solid var(--gray-2);
+  border-radius: 4px; color: var(--text); font-family: var(--sans);
+  font-size: .9rem; padding: .55rem .85rem; outline: none; transition: border-color .18s, box-shadow .18s;
+}
+input:focus, textarea:focus, select:focus { border-color: var(--blue-l); box-shadow: 0 0 0 3px rgba(46,111,212,.12); background: #fff; }
+input[type="password"] { font-family: var(--mono); letter-spacing: .3em; }
+textarea { resize: vertical; min-height: 80px; }
+.form-row { display: flex; gap: .75rem; }
+.form-row .form-group { flex: 1; }
+.modal-divider { border: none; border-top: 1px solid var(--gray-2); margin: 1rem 0; }
+.submit-btn { width: 100%; padding: .7rem; border: none; border-radius: 4px; font-family: var(--sans); font-size: .9rem; font-weight: 700; cursor: pointer; letter-spacing: .06em; margin-top: .3rem; transition: background .18s; }
+.btn-primary { background: var(--blue); color: #fff; }
+.btn-primary:hover { background: var(--navy); }
+.btn-gold { background: var(--gold); color: #fff; }
+.btn-gold:hover { background: #a5751f; }
+.btn-red { background: var(--red); color: #fff; }
+.btn-red:hover { background: #991b1b; }
+.pin-err { font-size: .74rem; color: var(--red); display: none; margin-top: .35rem; font-weight: 600; }
+
+/* MISC */
+.empty-state { text-align: center; padding: 2.5rem 1rem; color: var(--gray-3); font-size: .85rem; }
+.empty-icon-text { font-family: var(--mono); font-size: .8rem; margin-bottom: .5rem; letter-spacing: .1em; color: var(--gray-3); }
+.loading-text { text-align: center; padding: 2rem; color: var(--gray-3); font-size: .82rem; font-family: var(--mono); letter-spacing: .08em; }
+
+/* FOOTER */
+footer { background: var(--navy-d); color: #6a8aaa; text-align: center; padding: 2rem; font-size: .75rem; letter-spacing: .04em; line-height: 1.8; }
+footer strong { color: #9ab0d0; }
+
+@media (max-width: 720px) {
+  .page-body { grid-template-columns: 1fr; }
+  .header-main { flex-wrap: wrap; }
+  .hero-inner h1 { font-size: 1.4rem; }
+  .nav-tab { padding: .7rem .8rem; font-size: .74rem; }
+  .utility-bar { font-size: .65rem; }
+}
+</style>
+</head>
+<body>
+
+<!-- UTILITY BAR -->
+<div class="utility-bar">
+  <div class="utility-links">
+    <span>Official Stilton County Community Portal</span>
+    <span>|</span>
+    <a href="#">Contact Staff</a>
+    <span>|</span>
+    <a href="#">Server Rules</a>
+    <span>|</span>
+    <a href="#">Join Server</a>
+  </div>
+  <div class="utility-clock" id="clockDisplay"></div>
+</div>
+
+<!-- HEADER -->
+<header>
+  <div class="header-main">
+    <svg class="city-seal" viewBox="0 0 68 68" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="34" cy="34" r="33" fill="#1a2744" stroke="#c8922a" stroke-width="2"/>
+      <circle cx="34" cy="34" r="26" fill="none" stroke="#c8922a" stroke-width="0.7" stroke-dasharray="3 2"/>
+      <rect x="22" y="28" width="24" height="16" rx="1" fill="none" stroke="#c8922a" stroke-width="1.2"/>
+      <rect x="26" y="32" width="4" height="4" rx="0.5" fill="#c8922a" opacity="0.7"/>
+      <rect x="32" y="32" width="4" height="4" rx="0.5" fill="#c8922a" opacity="0.7"/>
+      <rect x="38" y="32" width="4" height="4" rx="0.5" fill="#c8922a" opacity="0.7"/>
+      <rect x="30" y="38" width="8" height="6" rx="0.5" fill="#c8922a" opacity="0.8"/>
+      <rect x="33.5" y="20" width="1.2" height="8" fill="#c8922a"/>
+      <polygon points="34.7,20 40,22.5 34.7,25" fill="#c8922a" opacity="0.9"/>
+      <text x="34" y="55" text-anchor="middle" font-family="Merriweather,serif" font-size="4.2" fill="#f5c762" font-weight="700" letter-spacing="0.5">STILTON CO.</text>
+    </svg>
+    <div class="header-wordmark">
+      <div class="wordmark-city">Stilton County <em>Community</em></div>
+      <div class="wordmark-sub">Official City Government Portal &nbsp;·&nbsp; Brick Rigs Roleplay</div>
+    </div>
+    <div class="header-right">
+      <div class="server-status"><span class="status-dot"></span> Server Online</div>
+    </div>
+  </div>
+</header>
+
+<!-- NAV -->
+<div class="nav-bar">
+  <div class="nav-inner">
+    <button class="nav-tab active" id="tab-ann"  onclick="showPage('ann')">Announcements</button>
+    <button class="nav-tab"        id="tab-evt"  onclick="showPage('evt')">Event Board</button>
+    <button class="nav-tab"        id="tab-emer" onclick="showPage('emer')">Emergency Status</button>
+  </div>
+</div>
+
+<!-- ======================== ANNOUNCEMENTS ======================== -->
+<div class="page active" id="page-ann">
+  <div class="hero-band">
+    <div class="hero-inner">
+      <div class="hero-eyebrow">Public Information Office</div>
+      <h1>Announcements &amp; Notices</h1>
+      <p>Official communications from Stilton County Community staff. Check here for server updates, rule changes, and important notices.</p>
+    </div>
+  </div>
+  <div class="page-body">
+    <div>
+      <div class="section-label">
+        <h2>Latest Announcements</h2>
+        <button class="add-btn add-btn-blue" onclick="openPinModal('ann')">Post Announcement</button>
+      </div>
+      <div id="ann-list"><div class="loading-text">Loading announcements...</div></div>
+    </div>
+    <div>
+      <div class="widget">
+        <div class="widget-header">About This Portal</div>
+        <div class="widget-body">
+          <p>This is the official web presence for the <strong>Stilton County Community</strong> Brick Rigs roleplay server. All announcements, events, and emergency alerts posted here are official.</p>
+        </div>
+      </div>
+      <div class="widget">
+        <div class="widget-header">Quick Links</div>
+        <div class="widget-body" style="padding:.5rem 1rem;">
+          <div class="quick-link">
+            <span class="quick-link-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
+            Server Rules
+          </div>
+          <div class="quick-link">
+            <svg style="width:14px;height:14px;stroke:var(--blue);fill:none;stroke-width:2;flex-shrink:0" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            Event Schedule
+          </div>
+          <div class="quick-link">
+            <svg style="width:14px;height:14px;stroke:var(--blue);fill:none;stroke-width:2;flex-shrink:0" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            Emergency Alerts
+          </div>
+          <div class="quick-link">
+            <svg style="width:14px;height:14px;stroke:var(--blue);fill:none;stroke-width:2;flex-shrink:0" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            Contact Staff
+          </div>
+        </div>
+      </div>
+      <div class="widget">
+        <div class="widget-header">Portal Status</div>
+        <div class="widget-body">
+          <p style="font-size:.78rem;color:var(--gray-4);line-height:1.8;">
+            <strong style="color:var(--navy);">Server:</strong> Online<br>
+            <strong style="color:var(--navy);">Database:</strong> Firebase Firestore<br>
+            <strong style="color:var(--navy);">Last Updated:</strong> <span id="last-updated"></span>
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== EVENTS ======================== -->
+<div class="page" id="page-evt">
+  <div class="hero-band">
+    <div class="hero-inner">
+      <div class="hero-eyebrow">Community Services</div>
+      <h1>Event Board</h1>
+      <p>Browse upcoming events, scheduled roleplay sessions, and community activities in Stilton County.</p>
+    </div>
+  </div>
+  <div class="page-body">
+    <div>
+      <div class="section-label">
+        <h2>Upcoming Events</h2>
+        <button class="add-btn add-btn-gold" onclick="openPinModal('evt')">Add Event</button>
+      </div>
+      <div id="evt-list"><div class="loading-text">Loading events...</div></div>
+    </div>
+    <div>
+      <div class="widget">
+        <div class="widget-header">Event Information</div>
+        <div class="widget-body">
+          <p>All events listed here are official Stilton County Community activities. Times are approximate. Check announcements for any updates or changes to events.</p>
+        </div>
+      </div>
+      <div class="widget">
+        <div class="widget-header">Event Categories</div>
+        <div class="widget-body" style="padding:.5rem 1rem;">
+          <div class="quick-link">Police Operations</div>
+          <div class="quick-link">Fire Department Drills</div>
+          <div class="quick-link">Racing Events</div>
+          <div class="quick-link">Community Activities</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== EMERGENCY ======================== -->
+<div class="page" id="page-emer">
+  <div class="hero-band">
+    <div class="hero-inner">
+      <div class="hero-eyebrow">Office of Emergency Management</div>
+      <h1>Emergency Status</h1>
+      <p>Live emergency alert feed for Stilton County. Monitor active incidents and advisories issued by emergency services.</p>
+    </div>
+  </div>
+
+  <div class="emer-status-bar">
+    <div class="all-clear-box" id="all-clear-msg">
+      <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="#15803d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+      </svg>
+      <div>
+        <h3>All Clear — No Active Emergencies</h3>
+        <p>Stilton County is currently operating normally. No active alerts or advisories at this time.</p>
+      </div>
+    </div>
+    <div class="active-alert-box" id="active-alert-msg" style="display:none;">
+      <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="#b91c1c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+        <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+      </svg>
+      <div>
+        <h3>Active Emergency Alert — Stilton County</h3>
+        <p>One or more active alerts are listed below. Follow all official directives from emergency services.</p>
+      </div>
+    </div>
+  </div>
+
+  <div style="max-width:1200px;margin:0 auto;padding:.8rem 2rem 0;display:flex;justify-content:flex-end;">
+    <button class="add-btn add-btn-red" onclick="openPinModal('emer')">Issue Alert</button>
+  </div>
+
+  <div class="emer-cards-area">
+    <div id="emer-list"><div class="loading-text">Loading emergency status...</div></div>
+  </div>
+</div>
+
+<!-- ======================== PIN MODAL ======================== -->
+<div class="overlay" id="pin-overlay">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-head-text">
+        <h2>Staff Authentication Required</h2>
+        <p>Enter your staff PIN to access this function</p>
+      </div>
+      <button class="modal-close" onclick="closeOverlay('pin-overlay')">&#x2715;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Staff Access PIN</label>
+        <input type="password" id="pin-input" placeholder="Enter PIN" maxlength="16" onkeydown="if(event.key==='Enter')verifyPin()">
+        <div class="pin-err" id="pin-err">Incorrect PIN. Please try again.</div>
+      </div>
+      <button class="submit-btn btn-primary" onclick="verifyPin()">Verify Identity and Continue</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== ANN MODAL ======================== -->
+<div class="overlay" id="ann-overlay">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-head-text">
+        <h2>Post Official Announcement</h2>
+        <p>Stilton County — Public Information Office</p>
+      </div>
+      <button class="modal-close" onclick="closeOverlay('ann-overlay')">&#x2715;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Category</label>
+        <select id="ann-type">
+          <option value="INFO">General Information</option>
+          <option value="NOTICE">Public Notice</option>
+          <option value="UPDATE">Server Update</option>
+          <option value="RULE">Rule Change</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Announcement Title</label>
+        <input type="text" id="ann-title" placeholder="e.g. New Roleplay Guidelines Effective...">
+      </div>
+      <div class="form-group">
+        <label>Body / Content</label>
+        <textarea id="ann-body" rows="4" placeholder="Write the full announcement here..."></textarea>
+      </div>
+      <div class="form-group">
+        <label>Issued By</label>
+        <input type="text" id="ann-author" placeholder="e.g. Server Administration, Chief of Police...">
+      </div>
+      <hr class="modal-divider">
+      <button class="submit-btn btn-primary" onclick="submitAnn()">Post Announcement</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== EVT MODAL ======================== -->
+<div class="overlay" id="evt-overlay">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-head-text">
+        <h2>Schedule an Event</h2>
+        <p>Stilton County — Community Services Division</p>
+      </div>
+      <button class="modal-close" onclick="closeOverlay('evt-overlay')">&#x2715;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Event Name</label>
+        <input type="text" id="evt-title" placeholder="e.g. Downtown Police Pursuit Night">
+      </div>
+      <div class="form-group">
+        <label>Description</label>
+        <textarea id="evt-desc" rows="3" placeholder="Describe the event, who should attend, what will happen..."></textarea>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Date</label>
+          <input type="date" id="evt-date">
+        </div>
+        <div class="form-group">
+          <label>Time</label>
+          <input type="time" id="evt-time">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Location</label>
+        <input type="text" id="evt-loc" placeholder="e.g. Stilton City Hall, Route 9 Highway...">
+      </div>
+      <hr class="modal-divider">
+      <button class="submit-btn btn-gold" onclick="submitEvt()">Add to Event Board</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== EMER MODAL ======================== -->
+<div class="overlay" id="emer-overlay">
+  <div class="modal">
+    <div class="modal-head red-head">
+      <div class="modal-head-text">
+        <h2>Issue Emergency Alert</h2>
+        <p>Stilton County — Office of Emergency Management</p>
+      </div>
+      <button class="modal-close" onclick="closeOverlay('emer-overlay')">&#x2715;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Alert Level</label>
+        <select id="emer-level">
+          <option value="EMERGENCY">Emergency — Critical Incident</option>
+          <option value="ADVISORY">Advisory — Moderate Concern</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Alert Title</label>
+        <input type="text" id="emer-title" placeholder="e.g. High-Speed Pursuit in Progress — Route 7">
+      </div>
+      <div class="form-group">
+        <label>Incident Details</label>
+        <textarea id="emer-body" rows="3" placeholder="Describe the situation and any public instructions..."></textarea>
+      </div>
+      <div class="form-group">
+        <label>Issued By</label>
+        <input type="text" id="emer-author" placeholder="e.g. Stilton County Sheriff's Department">
+      </div>
+      <hr class="modal-divider">
+      <button class="submit-btn btn-red" onclick="submitEmer()">Issue Official Alert</button>
+    </div>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <strong>Stilton County Community</strong> — Official City Government Portal<br>
+  Brick Rigs Roleplay Division &nbsp;·&nbsp; All content is for roleplay purposes only<br>
+  <span style="font-size:.65rem;opacity:.6;">Stilton County Community &middot; Unofficial Fan Server &middot; Not affiliated with Brick Rigs or its developers</span>
+</footer>
+
+</body>
+</html>
