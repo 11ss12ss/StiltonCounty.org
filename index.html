@@ -14,23 +14,25 @@
            serverTimestamp, query,
            orderBy }            from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
+
   const firebaseConfig = {
-    apiKey: "AIzaSyAeHalvnX8C5SIbao3EEMK8j5lg5ungr70",
-    authDomain: "scrps-9e40a.firebaseapp.com",
-    projectId: "scrps-9e40a",
-    storageBucket: "scrps-9e40a.firebasestorage.app",
+    apiKey:            atob("QUl6YVN5QWVIYWx2blg4QzVTSWJhbzNFRU1LOGo1bGc1dW5ncjcw"),
+    authDomain:        "scrps-9e40a.firebaseapp.com",
+    projectId:         "scrps-9e40a",
+    storageBucket:     "scrps-9e40a.firebasestorage.app",
     messagingSenderId: "56591407649",
-    appId: "1:56591407649:web:8ba0aa87a4ece3d2486160",
+    appId:             "1:56591407649:web:8ba0aa87a4ece3d2486160",
   };
 
   const app = initializeApp(firebaseConfig);
   const db  = getFirestore(app);
 
-  // ── STAFF PIN ─────────────────────────────────────────────────
-  const STAFF_PIN = "11223344";
+  // ── PINS ──────────────────────────────────────────────────────
+  const STAFF_PIN = "11223344";   // General staff / admin
+  const PD_PIN    = "22334455";   // Police Department
+  const FD_PIN    = "33445566";   // Fire Department
   // ──────────────────────────────────────────────────────────────
 
-  // pendingAction can be: 'ann' | 'evt' | 'emer' | {type:'del', col:'announcements'|'events'|'emergencies', id:string}
   let pendingAction = null;
 
   // ── CLOCK ─────────────────────────────────────────────────────
@@ -57,8 +59,8 @@
   };
 
   // ── OVERLAYS ──────────────────────────────────────────────────
-  window.openOverlay = function(id) { document.getElementById(id).classList.add("open"); };
-  window.closeOverlay = function(id) { document.getElementById(id).classList.remove("open"); };
+  window.openOverlay  = id => document.getElementById(id).classList.add("open");
+  window.closeOverlay = id => document.getElementById(id).classList.remove("open");
 
   document.querySelectorAll(".overlay").forEach(o => {
     o.addEventListener("click", e => { if (e.target === o) o.classList.remove("open"); });
@@ -69,44 +71,63 @@
     pendingAction = action;
     document.getElementById("pin-input").value = "";
     document.getElementById("pin-err").style.display = "none";
-
-    // Update pin modal subtitle based on action type
     const subtitle = document.getElementById("pin-subtitle");
-    if (action && action.type === 'del') {
+    const head = document.getElementById("pin-modal-head");
+    // Determine department context
+    const dept = (action === 'pd') ? 'pd'
+               : (action === 'fd') ? 'fd'
+               : (action && action.dept) ? action.dept
+               : null;
+    if (dept === 'pd') {
+      head.className = "modal-head pd-head";
+      subtitle.textContent = "Enter your Police Department PIN";
+    } else if (dept === 'fd') {
+      head.className = "modal-head fd-head";
+      subtitle.textContent = "Enter your Fire Department PIN";
+    } else if (action && action.type === 'del') {
+      head.className = "modal-head";
       subtitle.textContent = "Enter your staff PIN to remove this item";
     } else {
+      head.className = "modal-head";
       subtitle.textContent = "Enter your staff PIN to access this function";
     }
-
     openOverlay("pin-overlay");
     setTimeout(() => document.getElementById("pin-input").focus(), 120);
   };
 
   window.verifyPin = async function() {
-    const val = document.getElementById("pin-input").value;
-    if (val === STAFF_PIN) {
+    const val    = document.getElementById("pin-input").value;
+    const action = pendingAction;
+    const dept = (action === 'pd') ? 'pd'
+               : (action === 'fd') ? 'fd'
+               : (action && action.dept) ? action.dept
+               : null;
+
+    // Determine which PIN(s) are valid for this action
+    let valid = false;
+    if (dept === 'pd')       valid = (val === PD_PIN    || val === STAFF_PIN);
+    else if (dept === 'fd')  valid = (val === FD_PIN    || val === STAFF_PIN);
+    else                     valid = (val === STAFF_PIN);
+
+    if (valid) {
       closeOverlay("pin-overlay");
-      const action = pendingAction;
       pendingAction = null;
-
-      if (action === "ann")  { openOverlay("ann-overlay"); return; }
-      if (action === "evt")  { openOverlay("evt-overlay"); return; }
-      if (action === "emer") { openOverlay("emer-overlay"); return; }
-
-      // Handle delete actions
+      if (action === "ann")   { openOverlay("ann-overlay");  return; }
+      if (action === "evt")   { openOverlay("evt-overlay");  return; }
+      if (action === "emer")  { openOverlay("emer-overlay"); return; }
+      if (action === "pd")    { openOverlay("pd-overlay");   return; }
+      if (action === "fd")    { openOverlay("fd-overlay");   return; }
       if (action && action.type === 'del') {
         const confirmMsg = {
           announcements: "Remove this announcement?",
-          events: "Remove this event?",
-          emergencies: "Resolve and remove this alert?"
+          events:        "Remove this event?",
+          emergencies:   "Resolve and remove this alert?",
+          pd_posts:      "Remove this PD post?",
+          fd_posts:      "Remove this FD post?"
         }[action.col] || "Remove this item?";
-
         if (!confirm(confirmMsg)) return;
-        try {
-          await deleteDoc(doc(db, action.col, action.id));
-        } catch(err) {
-          alert("Error removing item: " + err.message);
-        }
+        try { await deleteDoc(doc(db, action.col, action.id)); }
+        catch(err) { alert("Error removing item: " + err.message); }
       }
     } else {
       document.getElementById("pin-err").style.display = "block";
@@ -117,9 +138,7 @@
 
   // ── UTILS ─────────────────────────────────────────────────────
   function esc(s) {
-    return String(s)
-      .replace(/&/g,"&amp;").replace(/</g,"&lt;")
-      .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   }
   function fmtTime(t) {
     if (!t) return "TBD";
@@ -137,15 +156,9 @@
   }
 
   // ── ANNOUNCEMENTS ─────────────────────────────────────────────
-  function tagClass(type) {
-    return {NOTICE:"tag-notice", UPDATE:"tag-update", RULE:"tag-rule"}[type] || "tag-info";
-  }
-  function cardClass(type) {
-    return {NOTICE:"type-notice", UPDATE:"type-update", RULE:"type-rule"}[type] || "";
-  }
-  function typeLabel(type) {
-    return {NOTICE:"Public Notice", UPDATE:"Server Update", RULE:"Rule Change"}[type] || "Information";
-  }
+  function tagClass(t)  { return {NOTICE:"tag-notice",UPDATE:"tag-update",RULE:"tag-rule"}[t]||"tag-info"; }
+  function cardClass(t) { return {NOTICE:"type-notice",UPDATE:"type-update",RULE:"type-rule"}[t]||""; }
+  function typeLabel(t) { return {NOTICE:"Public Notice",UPDATE:"Server Update",RULE:"Rule Change"}[t]||"Information"; }
 
   function renderAnn(snap) {
     const list = document.getElementById("ann-list");
@@ -155,22 +168,19 @@
       return;
     }
     snap.forEach(docSnap => {
-      const d = docSnap.data();
-      const id = docSnap.id;
+      const d = docSnap.data(), id = docSnap.id;
       list.insertAdjacentHTML("beforeend", `
         <div class="ann-card ${cardClass(d.type)}" style="animation:pgIn .3s ease">
           <div class="ann-top">
             <span class="ann-tag ${tagClass(d.type)}">${typeLabel(d.type)}</span>
             <span class="ann-date">${fmtTs(d.createdAt)}</span>
+            <button class="del-btn" onclick="openPinModal({type:'del',col:'announcements',id:'${id}'})">🔒 Remove</button>
           </div>
-          <button class="del-btn" style="float:right;margin-top:-26px;" onclick="openPinModal({type:'del',col:'announcements',id:'${id}'})">
-            <span class="del-lock-icon">🔒</span> Remove
-          </button>
           <h3>${esc(d.title)}</h3>
           <p>${esc(d.body)}</p>
           <div class="ann-footer">
             <span>POSTED BY: ${esc((d.author||"Server Administration").toUpperCase())}</span>
-            <span>STILTON COUNTY OFFICIAL</span>
+            <span class="ann-footer-right">STILTON COUNTY OFFICIAL</span>
           </div>
         </div>`);
     });
@@ -201,8 +211,7 @@
       return;
     }
     snap.forEach(docSnap => {
-      const d = docSnap.data();
-      const id = docSnap.id;
+      const d = docSnap.data(), id = docSnap.id;
       let month = "TBA", day = "--";
       if (d.date) {
         const dt = new Date(d.date + "T12:00:00");
@@ -215,15 +224,15 @@
             <div class="evt-cal-month">${month}</div>
             <div class="evt-cal-day">${day}</div>
           </div>
-          <div class="evt-body" style="flex:1">
-            <button class="del-btn" style="float:right;" onclick="openPinModal({type:'del',col:'events',id:'${id}'})">
-              <span class="del-lock-icon">🔒</span> Remove
-            </button>
-            <h3>${esc(d.title)}</h3>
+          <div class="evt-body">
+            <div class="evt-body-top">
+              <h3>${esc(d.title)}</h3>
+              <button class="del-btn" onclick="openPinModal({type:'del',col:'events',id:'${id}'})">🔒 Remove</button>
+            </div>
             <p>${esc(d.desc || "No description provided.")}</p>
             <div class="evt-meta">
-              <span>Location: ${esc(d.location || "Stilton County")}</span>
-              <span>Time: ${fmtTime(d.time)}</span>
+              <span>📍 ${esc(d.location || "Stilton County")}</span>
+              <span>🕐 ${fmtTime(d.time)}</span>
             </div>
           </div>
         </div>`);
@@ -256,22 +265,19 @@
     document.getElementById("active-alert-msg").style.display = hasAlerts ? "flex" : "none";
     if (!hasAlerts) return;
     snap.forEach(docSnap => {
-      const d   = docSnap.data();
-      const id  = docSnap.id;
+      const d = docSnap.data(), id = docSnap.id;
       const adv = d.level === "ADVISORY";
       list.insertAdjacentHTML("beforeend", `
         <div class="emer-card ${adv ? "advisory" : ""}" style="animation:pgIn .3s ease">
           <div class="emer-card-top">
             <span class="emer-badge ${adv ? "badge-adv" : "badge-emer"}">${adv ? "ADVISORY" : "EMERGENCY"}</span>
-            <span style="font-size:.7rem;color:var(--gray-3);font-family:var(--mono);">${fmtTs(d.createdAt)}</span>
+            <span class="emer-ts">${fmtTs(d.createdAt)}</span>
           </div>
           <h3>${esc(d.title)}</h3>
           <p>${esc(d.body || "No additional details. Contact emergency services.")}</p>
           <div class="emer-card-footer">
             <span>ISSUED BY: ${esc((d.author||"Stilton County Emergency Services").toUpperCase())}</span>
-            <button class="del-btn" onclick="openPinModal({type:'del',col:'emergencies',id:'${id}'})">
-              <span class="del-lock-icon">🔒</span> Resolve &amp; Remove
-            </button>
+            <button class="del-btn" onclick="openPinModal({type:'del',col:'emergencies',id:'${id}'})">🔒 Resolve &amp; Remove</button>
           </div>
         </div>`);
     });
@@ -292,10 +298,168 @@
       clearFields(["emer-title","emer-body","emer-author"]);
     } catch(err) { alert("Error issuing alert: " + err.message); }
   };
+
+  // ── POLICE DEPARTMENT ─────────────────────────────────────────
+  function pdTagClass(t)  { return {BOLO:"tag-bolo",POLICY:"tag-policy",ARREST:"tag-arrest"}[t]||"tag-pd-info"; }
+  function pdTypeLabel(t) { return {BOLO:"BOLO",POLICY:"Policy Update",ARREST:"Arrest Report"}[t]||"General"; }
+
+  function renderPD(snap) {
+    const list = document.getElementById("pd-list");
+    list.innerHTML = "";
+    if (snap.empty) {
+      list.innerHTML = `<div class="empty-state"><div class="empty-icon-text">[ No PD posts yet ]</div>No Police Department posts have been published.</div>`;
+      return;
+    }
+    snap.forEach(docSnap => {
+      const d = docSnap.data(), id = docSnap.id;
+      const imgHtml = d.imageUrl ? `<div class="post-img-wrap"><img src="${esc(d.imageUrl)}" alt="Attached image" class="post-img" onclick="openImgViewer('${esc(d.imageUrl)}')" loading="lazy"></div>` : "";
+      list.insertAdjacentHTML("beforeend", `
+        <div class="dept-card pd-card" style="animation:pgIn .3s ease">
+          <div class="ann-top">
+            <span class="ann-tag ${pdTagClass(d.type)}">${pdTypeLabel(d.type)}</span>
+            <span class="ann-date">${fmtTs(d.createdAt)}</span>
+            <button class="del-btn" onclick="openPinModal({type:'del',col:'pd_posts',id:'${id}',dept:'pd'})">Remove</button>
+          </div>
+          <h3>${esc(d.title)}</h3>
+          <p>${esc(d.body)}</p>
+          ${imgHtml}
+          <div class="ann-footer">
+            <span>OFFICER: ${esc((d.author||"Stilton County PD").toUpperCase())}</span>
+            <span>SCPD OFFICIAL</span>
+          </div>
+        </div>`);
+    });
+  }
+  const pdQ = query(collection(db,"pd_posts"), orderBy("createdAt","desc"));
+  onSnapshot(pdQ, renderPD);
+
+  window.submitPD = async function() {
+    const type   = document.getElementById("pd-type").value;
+    const title  = document.getElementById("pd-title").value.trim();
+    const body   = document.getElementById("pd-body").value.trim();
+    const author = document.getElementById("pd-author").value.trim() || "Stilton County PD";
+    const file   = document.getElementById("pd-img").files[0];
+    if (!title || !body) { alert("Please fill in the title and body."); return; }
+    const btn = document.getElementById("pd-submit-btn");
+    btn.disabled = true; btn.textContent = "Posting…";
+    try {
+      let imageUrl = null;
+      if (file) {
+        btn.textContent = "Uploading image…";
+        imageUrl = await uploadToImgur(file);
+      }
+      const data = { type, title, body, author, createdAt: serverTimestamp() };
+      if (imageUrl) data.imageUrl = imageUrl;
+      await addDoc(collection(db,"pd_posts"), data);
+      closeOverlay("pd-overlay");
+      clearFields(["pd-title","pd-body","pd-author"]);
+      document.getElementById("pd-img").value = "";
+      document.getElementById("pd-img-preview").innerHTML = "";
+    } catch(err) { alert("Error saving PD post: " + err.message); }
+    finally { btn.disabled = false; btn.textContent = "Post to PD Board"; }
+  };
+
+  // ── FIRE DEPARTMENT ───────────────────────────────────────────
+  function fdTagClass(t)  { return {ALERT:"tag-fd-alert",DRILL:"tag-fd-drill",UPDATE:"tag-fd-update"}[t]||"tag-fd-info"; }
+  function fdTypeLabel(t) { return {ALERT:"Fire Alert",DRILL:"Drill Notice",UPDATE:"Dept Update"}[t]||"General"; }
+
+  function renderFD(snap) {
+    const list = document.getElementById("fd-list");
+    list.innerHTML = "";
+    if (snap.empty) {
+      list.innerHTML = `<div class="empty-state"><div class="empty-icon-text">[ No FD posts yet ]</div>No Fire Department posts have been published.</div>`;
+      return;
+    }
+    snap.forEach(docSnap => {
+      const d = docSnap.data(), id = docSnap.id;
+      const imgHtml = d.imageUrl ? `<div class="post-img-wrap"><img src="${esc(d.imageUrl)}" alt="Attached image" class="post-img" onclick="openImgViewer('${esc(d.imageUrl)}')" loading="lazy"></div>` : "";
+      list.insertAdjacentHTML("beforeend", `
+        <div class="dept-card fd-card" style="animation:pgIn .3s ease">
+          <div class="ann-top">
+            <span class="ann-tag ${fdTagClass(d.type)}">${fdTypeLabel(d.type)}</span>
+            <span class="ann-date">${fmtTs(d.createdAt)}</span>
+            <button class="del-btn" onclick="openPinModal({type:'del',col:'fd_posts',id:'${id}',dept:'fd'})">Remove</button>
+          </div>
+          <h3>${esc(d.title)}</h3>
+          <p>${esc(d.body)}</p>
+          ${imgHtml}
+          <div class="ann-footer">
+            <span>POSTED BY: ${esc((d.author||"Stilton County FD").toUpperCase())}</span>
+            <span>SCFD OFFICIAL</span>
+          </div>
+        </div>`);
+    });
+  }
+  const fdQ = query(collection(db,"fd_posts"), orderBy("createdAt","desc"));
+  onSnapshot(fdQ, renderFD);
+
+  window.submitFD = async function() {
+    const type   = document.getElementById("fd-type").value;
+    const title  = document.getElementById("fd-title").value.trim();
+    const body   = document.getElementById("fd-body").value.trim();
+    const author = document.getElementById("fd-author").value.trim() || "Stilton County FD";
+    const file   = document.getElementById("fd-img").files[0];
+    if (!title || !body) { alert("Please fill in the title and body."); return; }
+    const btn = document.getElementById("fd-submit-btn");
+    btn.disabled = true; btn.textContent = "Posting…";
+    try {
+      let imageUrl = null;
+      if (file) {
+        btn.textContent = "Uploading image…";
+        imageUrl = await uploadToImgur(file);
+      }
+      const data = { type, title, body, author, createdAt: serverTimestamp() };
+      if (imageUrl) data.imageUrl = imageUrl;
+      await addDoc(collection(db,"fd_posts"), data);
+      closeOverlay("fd-overlay");
+      clearFields(["fd-title","fd-body","fd-author"]);
+      document.getElementById("fd-img").value = "";
+      document.getElementById("fd-img-preview").innerHTML = "";
+    } catch(err) { alert("Error saving FD post: " + err.message); }
+    finally { btn.disabled = false; btn.textContent = "Post to FD Board"; }
+  };
+
+  // ── IMGUR UPLOAD (free, no storage cost) ─────────────────────
+  // Register a free app at https://api.imgur.com/oauth2/addclient
+  // (select "Anonymous usage without user authorization")
+  // then replace the Client-ID below with your own.
+  const IMGUR_CLIENT_ID = "546c25a59c58ad7";  // default public demo key — get your own
+
+  async function uploadToImgur(file) {
+    const formData = new FormData();
+    formData.append("image", file);
+    const res = await fetch("https://api.imgur.com/3/image", {
+      method: "POST",
+      headers: { Authorization: `Client-ID ${IMGUR_CLIENT_ID}` },
+      body: formData
+    });
+    const json = await res.json();
+    if (!json.success) throw new Error("Imgur upload failed: " + (json.data?.error || "unknown error"));
+    return json.data.link;
+  }
+
+  // ── IMAGE VIEWER ──────────────────────────────────────────────
+  window.openImgViewer = function(url) {
+    document.getElementById("img-viewer-img").src = url;
+    openOverlay("img-viewer-overlay");
+  };
+
+  window.previewImg = function(input, previewId) {
+    const container = document.getElementById(previewId);
+    container.innerHTML = "";
+    if (!input.files[0]) return;
+    const url = URL.createObjectURL(input.files[0]);
+    container.innerHTML = `<div class="img-preview-wrap"><img src="${url}" alt="Preview"><button class="img-preview-clear" onclick="clearImgPreview('${input.id}','${previewId}')" type="button">&#x2715;</button></div>`;
+  };
+
+  window.clearImgPreview = function(inputId, previewId) {
+    document.getElementById(inputId).value = "";
+    document.getElementById(previewId).innerHTML = "";
+  };
 </script>
 
 <style>
-* { box-sizing: border-box; margin: 0; padding: 0; }
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
   --navy:       #1a2744;
@@ -321,307 +485,470 @@
   --serif:      'Merriweather', Georgia, serif;
   --sans:       'Source Sans 3', sans-serif;
   --mono:       'Roboto Mono', monospace;
-  --shadow:     0 1px 3px rgba(0,0,0,.10), 0 4px 12px rgba(0,0,0,.06);
+  --pd-blue:    #1d4ed8;
+  --pd-blue-l:  #dbeafe;
+  --pd-dark:    #1e3a8a;
+  --fd-red:     #dc2626;
+  --fd-red-l:   #fee2e2;
+  --fd-dark:    #7f1d1d;
   --shadow-m:   0 4px 16px rgba(0,0,0,.12), 0 1px 4px rgba(0,0,0,.08);
+  --r:          6px;
 }
 
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
 body { font-family: var(--sans); color: var(--text); background: var(--gray-1); font-size: 15px; line-height: 1.6; }
 
-/* UTILITY BAR */
+/* ── UTILITY BAR ── */
 .utility-bar {
   background: var(--navy-d); color: #9ab0d0;
   font-size: .72rem; letter-spacing: .03em;
-  padding: 0 2rem; display: flex; align-items: center;
-  justify-content: space-between; gap: 1rem; height: 32px;
+  padding: 0 1.25rem; display: flex; align-items: center;
+  justify-content: space-between; gap: .75rem; min-height: 32px;
 }
 .utility-bar a { color: #9ab0d0; text-decoration: none; }
 .utility-bar a:hover { color: #fff; }
-.utility-links { display: flex; gap: 1.4rem; align-items: center; }
+.utility-links { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
 .utility-links span { color: #3d5070; }
-.utility-clock { font-family: var(--mono); font-size: .68rem; color: #6a8aaa; }
+.utility-clock { font-family: var(--mono); font-size: .68rem; color: #6a8aaa; white-space: nowrap; }
 
-/* HEADER */
+/* ── HEADER ── */
 header {
   background: var(--white); border-bottom: 1px solid var(--gray-2);
   box-shadow: var(--shadow); position: sticky; top: 0; z-index: 100;
 }
 .header-main {
   max-width: 1200px; margin: 0 auto;
-  padding: 1rem 2rem; display: flex; align-items: center; gap: 1.4rem;
+  padding: .75rem 1.25rem; display: flex; align-items: center; gap: 1rem;
 }
-.city-seal { flex-shrink: 0; width: 68px; height: 68px; }
-.header-wordmark { flex: 1; }
+.city-seal { flex-shrink: 0; width: 52px; height: 52px; }
+.header-wordmark { flex: 1; min-width: 0; }
 .wordmark-city {
-  font-family: var(--serif); font-size: 1.55rem; font-weight: 700;
-  color: var(--navy); line-height: 1.1; letter-spacing: -.01em;
+  font-family: var(--serif); font-size: 1.25rem; font-weight: 700;
+  color: var(--navy); line-height: 1.15; letter-spacing: -.01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .wordmark-city em { font-style: normal; color: var(--blue); }
 .wordmark-sub {
-  font-size: .72rem; color: var(--gray-3); letter-spacing: .12em;
-  text-transform: uppercase; margin-top: .15rem; font-weight: 600;
+  font-size: .66rem; color: var(--gray-3); letter-spacing: .1em;
+  text-transform: uppercase; margin-top: .1rem; font-weight: 600;
 }
-.header-right { display: flex; flex-direction: column; align-items: flex-end; gap: .5rem; }
+.header-right { flex-shrink: 0; }
 .server-status {
-  display: inline-flex; align-items: center; gap: .4rem;
-  font-size: .7rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .35rem;
+  font-size: .65rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
   color: var(--green); background: var(--green-bg); border: 1px solid #bbf7d0;
-  border-radius: 20px; padding: .2rem .7rem;
+  border-radius: 20px; padding: .2rem .6rem;
 }
 .status-dot {
   width: 6px; height: 6px; border-radius: 50%;
-  background: var(--green); animation: pulse 1.8s ease-in-out infinite;
+  background: var(--green); animation: pulse 1.8s ease-in-out infinite; flex-shrink: 0;
 }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
 
-/* NAV */
-.nav-bar { background: var(--navy); border-bottom: 3px solid var(--gold); }
-.nav-inner { max-width: 1200px; margin: 0 auto; padding: 0 2rem; display: flex; align-items: stretch; }
+/* ── NAV ── */
+.nav-bar { background: var(--navy); border-bottom: 3px solid var(--gold); overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.nav-inner { max-width: 1200px; margin: 0 auto; padding: 0 1.25rem; display: flex; align-items: stretch; }
 .nav-tab {
   background: none; border: none; color: #b0c4e0;
-  font-family: var(--sans); font-size: .82rem; font-weight: 600;
-  letter-spacing: .06em; text-transform: uppercase;
-  padding: .85rem 1.4rem; cursor: pointer;
+  font-family: var(--sans); font-size: .78rem; font-weight: 600;
+  letter-spacing: .05em; text-transform: uppercase;
+  padding: .8rem 1rem; cursor: pointer;
   border-bottom: 3px solid transparent; margin-bottom: -3px;
   transition: color .18s, background .18s, border-color .18s;
-  white-space: nowrap;
+  white-space: nowrap; flex-shrink: 0;
 }
 .nav-tab:hover { color: #fff; background: rgba(255,255,255,.06); }
 .nav-tab.active { color: #fff; border-bottom-color: var(--gold); background: rgba(255,255,255,.08); }
 
-/* HERO */
+/* ── HERO ── */
 .hero-band {
   background: linear-gradient(135deg, var(--navy) 0%, var(--navy-m) 60%, #1e3a6a 100%);
-  color: #fff; padding: 2.8rem 2rem 2.4rem; position: relative; overflow: hidden;
+  color: #fff; padding: 2rem 1.25rem 1.75rem; position: relative; overflow: hidden;
 }
 .hero-band::before {
   content: ''; position: absolute; right: -60px; top: -60px;
-  width: 340px; height: 340px; border-radius: 50%;
-  border: 40px solid rgba(255,255,255,.03);
-}
-.hero-band::after {
-  content: ''; position: absolute; right: 60px; bottom: -80px;
-  width: 220px; height: 220px; border-radius: 50%;
-  border: 30px solid rgba(200,146,42,.07);
+  width: 280px; height: 280px; border-radius: 50%;
+  border: 40px solid rgba(255,255,255,.03); pointer-events: none;
 }
 .hero-inner { max-width: 1200px; margin: 0 auto; position: relative; z-index: 1; }
 .hero-eyebrow {
-  font-size: .7rem; font-weight: 600; letter-spacing: .2em; text-transform: uppercase;
-  color: var(--gold-l); margin-bottom: .5rem; display: flex; align-items: center; gap: .5rem;
+  font-size: .68rem; font-weight: 600; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--gold-l); margin-bottom: .4rem; display: flex; align-items: center; gap: .5rem;
 }
-.hero-eyebrow::before { content:''; display:inline-block; width:24px; height:2px; background:var(--gold); }
-.hero-inner h1 { font-family: var(--serif); font-size: 2rem; font-weight: 700; line-height: 1.2; margin-bottom: .6rem; }
-.hero-inner p { font-size: .95rem; color: #9ab0d0; font-weight: 300; max-width: 520px; }
+.hero-eyebrow::before { content:''; display:inline-block; width:20px; height:2px; background:var(--gold); flex-shrink:0; }
+.hero-inner h1 { font-family: var(--serif); font-size: clamp(1.3rem, 4vw, 2rem); font-weight: 700; line-height: 1.2; margin-bottom: .5rem; }
+.hero-inner p { font-size: .9rem; color: #9ab0d0; font-weight: 300; max-width: 520px; }
 
-/* PAGES */
+/* ── PAGES ── */
 .page { display: none; }
 .page.active { display: block; animation: pgIn .25s ease; }
 @keyframes pgIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
 
 .page-body {
   max-width: 1200px; margin: 0 auto;
-  padding: 2rem 2rem 4rem;
-  display: grid; grid-template-columns: 1fr 300px; gap: 2rem; align-items: start;
+  padding: 1.5rem 1.25rem 3rem;
+  display: grid; grid-template-columns: 1fr 280px; gap: 1.5rem; align-items: start;
 }
 
-/* SECTION LABEL */
+/* ── SECTION LABEL ── */
 .section-label {
-  display: flex; align-items: center; justify-content: space-between;
-  border-bottom: 2px solid var(--navy); padding-bottom: .5rem; margin-bottom: 1.4rem;
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5rem;
+  border-bottom: 2px solid var(--navy); padding-bottom: .5rem; margin-bottom: 1.25rem;
 }
-.section-label h2 { font-family: var(--serif); font-size: 1.15rem; font-weight: 700; color: var(--navy); }
+.section-label h2 { font-family: var(--serif); font-size: 1.1rem; font-weight: 700; color: var(--navy); }
 
-/* ANN CARDS */
+/* ── ANN CARDS ── */
 .ann-card {
   background: var(--white); border: 1px solid var(--gray-2); border-left: 4px solid var(--blue);
-  border-radius: 6px; padding: 1.3rem 1.5rem; margin-bottom: 1rem;
-  box-shadow: var(--shadow); transition: box-shadow .2s, border-color .2s;
+  border-radius: var(--r); padding: 1.1rem 1.25rem; margin-bottom: .9rem;
+  box-shadow: var(--shadow); transition: box-shadow .2s;
 }
 .ann-card:hover { box-shadow: var(--shadow-m); }
 .ann-card.type-notice { border-left-color: var(--gold); }
 .ann-card.type-update { border-left-color: var(--green); }
 .ann-card.type-rule   { border-left-color: var(--red); }
-.ann-top { display: flex; align-items: center; gap: .6rem; margin-bottom: .55rem; flex-wrap: wrap; }
+
+.ann-top {
+  display: flex; align-items: center; gap: .5rem; margin-bottom: .5rem;
+  flex-wrap: wrap;
+}
 .ann-tag {
-  font-size: .62rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
-  padding: .18rem .55rem; border-radius: 3px;
+  font-size: .6rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  padding: .15rem .5rem; border-radius: 3px; flex-shrink: 0;
 }
 .tag-info   { background: #dbeafe; color: #1e40af; }
 .tag-notice { background: #fef3c7; color: #92400e; }
 .tag-update { background: var(--green-bg); color: #166534; }
 .tag-rule   { background: var(--red-bg); color: #991b1b; }
-.ann-date { font-size: .7rem; color: var(--gray-3); font-family: var(--mono); margin-left: auto; }
-.ann-card h3 { font-family: var(--serif); font-size: 1rem; font-weight: 700; color: var(--navy); margin-bottom: .35rem; line-height: 1.35; }
-.ann-card p  { font-size: .88rem; color: var(--gray-4); line-height: 1.65; font-weight: 300; }
-.ann-footer {
-  margin-top: .8rem; padding-top: .6rem; border-top: 1px solid var(--gray-2);
-  font-size: .68rem; color: var(--gray-3); letter-spacing: .06em;
-  display: flex; align-items: center; justify-content: space-between;
-}
+.ann-date { font-size: .68rem; color: var(--gray-3); font-family: var(--mono); }
+.ann-top .del-btn { margin-left: auto; }
 
-/* EVT CARDS */
+.ann-card h3 { font-family: var(--serif); font-size: .97rem; font-weight: 700; color: var(--navy); margin-bottom: .3rem; line-height: 1.35; }
+.ann-card p  { font-size: .86rem; color: var(--gray-4); line-height: 1.65; font-weight: 300; }
+.ann-footer {
+  margin-top: .75rem; padding-top: .55rem; border-top: 1px solid var(--gray-2);
+  font-size: .66rem; color: var(--gray-3); letter-spacing: .05em;
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .3rem;
+}
+.ann-footer-right { display: none; }
+
+/* ── DEPT CARDS (PD / FD) ── */
+.dept-card {
+  background: var(--white); border: 1px solid var(--gray-2); border-left: 4px solid var(--gray-3);
+  border-radius: var(--r); padding: 1.1rem 1.25rem; margin-bottom: .9rem;
+  box-shadow: var(--shadow); transition: box-shadow .2s;
+}
+.dept-card:hover { box-shadow: var(--shadow-m); }
+.dept-card h3 { font-family: var(--serif); font-size: .97rem; font-weight: 700; color: var(--navy); margin-bottom: .3rem; line-height: 1.35; }
+.dept-card p  { font-size: .86rem; color: var(--gray-4); line-height: 1.65; font-weight: 300; }
+
+.pd-card { border-left-color: var(--pd-blue); }
+.fd-card { border-left-color: var(--fd-red); }
+
+/* PD tags */
+.tag-pd-info  { background: #eff6ff; color: #1d4ed8; }
+.tag-bolo     { background: #fef9c3; color: #713f12; }
+.tag-policy   { background: #f0fdf4; color: #166534; }
+.tag-arrest   { background: #fdf4ff; color: #6b21a8; }
+/* FD tags */
+.tag-fd-info  { background: #fff7ed; color: #9a3412; }
+.tag-fd-alert { background: #fef2f2; color: #b91c1c; }
+.tag-fd-drill { background: #fffbeb; color: #92400e; }
+.tag-fd-update{ background: #f0fdf4; color: #166534; }
+
+/* Dept hero band variants */
+.hero-band.pd-hero { background: linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 60%, #2563eb 100%); }
+.hero-band.fd-hero { background: linear-gradient(135deg, #7f1d1d 0%, #dc2626 60%, #ef4444 100%); }
+
+/* PD / FD modal heads */
+.modal-head.pd-head { background: var(--pd-blue); }
+.modal-head.pd-head .modal-head-text p { color: #bfdbfe; }
+.modal-head.fd-head { background: var(--fd-red); }
+.modal-head.fd-head .modal-head-text p { color: #fecaca; }
+
+/* Dept badge on sidebar */
+.dept-badge {
+  display: inline-flex; align-items: center; gap: .35rem;
+  font-size: .66rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  padding: .22rem .65rem; border-radius: 20px;
+}
+.dept-badge-pd { background: var(--pd-blue-l); color: var(--pd-dark); border: 1px solid #93c5fd; }
+.dept-badge-fd { background: var(--fd-red-l);  color: var(--fd-dark);  border: 1px solid #fca5a5; }
+
+/* ── EVT CARDS ── */
 .evt-card {
-  background: var(--white); border: 1px solid var(--gray-2); border-radius: 6px;
-  padding: 1.3rem 1.5rem; margin-bottom: 1rem;
-  box-shadow: var(--shadow); display: flex; gap: 1.2rem; transition: box-shadow .2s;
+  background: var(--white); border: 1px solid var(--gray-2); border-radius: var(--r);
+  padding: 1.1rem 1.25rem; margin-bottom: .9rem;
+  box-shadow: var(--shadow); display: flex; gap: 1rem; transition: box-shadow .2s;
 }
 .evt-card:hover { box-shadow: var(--shadow-m); }
-.evt-cal { flex-shrink: 0; width: 56px; border-radius: 6px; overflow: hidden; border: 1px solid var(--gray-2); text-align: center; }
-.evt-cal-month { background: var(--navy); color: #fff; font-size: .6rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; padding: .2rem 0; }
-.evt-cal-day   { font-family: var(--serif); font-size: 1.7rem; font-weight: 700; color: var(--navy); line-height: 1; padding: .3rem 0; }
-.evt-body h3 { font-family: var(--serif); font-size: 1rem; font-weight: 700; color: var(--navy); margin-bottom: .3rem; }
-.evt-body p  { font-size: .85rem; color: var(--gray-4); line-height: 1.6; font-weight: 300; }
-.evt-meta { display: flex; gap: 1rem; margin-top: .55rem; flex-wrap: wrap; }
+.evt-cal { flex-shrink: 0; width: 52px; border-radius: var(--r); overflow: hidden; border: 1px solid var(--gray-2); text-align: center; align-self: flex-start; }
+.evt-cal-month { background: var(--navy); color: #fff; font-size: .58rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: .2rem 0; }
+.evt-cal-day   { font-family: var(--serif); font-size: 1.55rem; font-weight: 700; color: var(--navy); line-height: 1; padding: .3rem 0; }
+.evt-body { flex: 1; min-width: 0; }
+.evt-body-top { display: flex; align-items: flex-start; justify-content: space-between; gap: .5rem; margin-bottom: .25rem; }
+.evt-body-top h3 { font-family: var(--serif); font-size: .97rem; font-weight: 700; color: var(--navy); line-height: 1.3; }
+.evt-body p  { font-size: .84rem; color: var(--gray-4); line-height: 1.6; font-weight: 300; }
+.evt-meta { display: flex; gap: .75rem; margin-top: .5rem; flex-wrap: wrap; }
 .evt-meta span { font-size: .72rem; color: var(--gray-3); }
 
-/* SIDEBAR */
-.widget { background: var(--white); border: 1px solid var(--gray-2); border-radius: 6px; overflow: hidden; box-shadow: var(--shadow); margin-bottom: 1.2rem; }
-.widget-header { background: var(--navy); color: #fff; font-size: .72rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; padding: .6rem 1rem; }
-.widget-body { padding: 1rem; }
-.widget-body p { font-size: .82rem; color: var(--gray-4); line-height: 1.6; }
+/* ── SIDEBAR ── */
+.widget { background: var(--white); border: 1px solid var(--gray-2); border-radius: var(--r); overflow: hidden; box-shadow: var(--shadow); margin-bottom: 1rem; }
+.widget-header { background: var(--navy); color: #fff; font-size: .7rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; padding: .55rem 1rem; }
+.widget-body { padding: .9rem 1rem; }
+.widget-body p { font-size: .8rem; color: var(--gray-4); line-height: 1.6; }
 .quick-link {
-  display: flex; align-items: center; gap: .6rem; padding: .55rem 0;
-  border-bottom: 1px solid var(--gray-2); font-size: .83rem; color: var(--blue); font-weight: 500;
+  display: flex; align-items: center; gap: .5rem; padding: .5rem 0;
+  border-bottom: 1px solid var(--gray-2); font-size: .82rem; color: var(--blue); font-weight: 500;
 }
 .quick-link:last-child { border-bottom: none; }
-.quick-link-icon { width: 28px; height: 28px; border-radius: 4px; background: var(--sky); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.quick-link-icon svg { width: 14px; height: 14px; stroke: var(--blue); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
-/* EMERGENCY */
-.emer-status-bar { max-width: 1200px; margin: 1.5rem auto 0; padding: 0 2rem; }
+/* ── EMERGENCY ── */
+.emer-status-bar { max-width: 1200px; margin: 1.25rem auto 0; padding: 0 1.25rem; }
 .all-clear-box {
   background: var(--green-bg); border: 1px solid #bbf7d0; border-left: 5px solid var(--green);
-  border-radius: 6px; padding: 1.2rem 1.5rem; display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem;
+  border-radius: var(--r); padding: 1rem 1.25rem; display: flex; align-items: center; gap: .9rem; margin-bottom: 1.25rem;
 }
-.all-clear-box h3 { font-family: var(--serif); font-size: 1rem; color: var(--green); font-weight: 700; }
-.all-clear-box p  { font-size: .82rem; color: #166534; }
+.all-clear-box h3 { font-family: var(--serif); font-size: .97rem; color: var(--green); font-weight: 700; }
+.all-clear-box p  { font-size: .8rem; color: #166534; }
 .active-alert-box {
   background: var(--red-bg); border: 1px solid #fecaca; border-left: 5px solid var(--red);
-  border-radius: 6px; padding: 1.2rem 1.5rem; display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem;
+  border-radius: var(--r); padding: 1rem 1.25rem; display: flex; align-items: center; gap: .9rem; margin-bottom: 1.25rem;
 }
-.active-alert-box h3 { font-family: var(--serif); font-size: 1rem; color: var(--red); font-weight: 700; }
-.active-alert-box p  { font-size: .82rem; color: #7f1d1d; }
-.status-icon { width: 36px; height: 36px; flex-shrink: 0; }
+.active-alert-box h3 { font-family: var(--serif); font-size: .97rem; color: var(--red); font-weight: 700; }
+.active-alert-box p  { font-size: .8rem; color: #7f1d1d; }
+.status-icon { width: 32px; height: 32px; flex-shrink: 0; }
 .status-icon svg { width: 100%; height: 100%; }
 
-.emer-cards-area { max-width: 1200px; margin: 0 auto; padding: 0 2rem 3rem; }
+.emer-issue-row { max-width: 1200px; margin: 0 auto; padding: .75rem 1.25rem 0; display: flex; justify-content: flex-end; }
+.emer-cards-area { max-width: 1200px; margin: 0 auto; padding: .75rem 1.25rem 3rem; }
+
 .emer-card {
   background: var(--white); border: 1px solid #fecaca; border-left: 5px solid var(--red);
-  border-radius: 6px; padding: 1.3rem 1.5rem; margin-bottom: 1rem; box-shadow: var(--shadow);
+  border-radius: var(--r); padding: 1.1rem 1.25rem; margin-bottom: .9rem; box-shadow: var(--shadow);
 }
 .emer-card.advisory { border-color: #fed7aa; border-left-color: var(--orange); }
-.emer-card-top { display: flex; align-items: center; gap: .7rem; margin-bottom: .5rem; flex-wrap: wrap; }
+.emer-card-top { display: flex; align-items: center; gap: .6rem; margin-bottom: .45rem; flex-wrap: wrap; }
 .emer-badge {
-  font-size: .62rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
-  padding: .2rem .6rem; border-radius: 3px;
+  font-size: .6rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  padding: .18rem .55rem; border-radius: 3px;
 }
 .badge-emer { background: var(--red-bg); color: var(--red); border: 1px solid #fca5a5; }
 .badge-adv  { background: var(--orange-bg); color: var(--orange); border: 1px solid #fdba74; }
-.emer-card h3   { font-family: var(--serif); font-size: 1rem; font-weight: 700; color: var(--red); margin-bottom: .35rem; }
+.emer-ts { font-size: .68rem; color: var(--gray-3); font-family: var(--mono); }
+.emer-card h3   { font-family: var(--serif); font-size: .97rem; font-weight: 700; color: var(--red); margin-bottom: .3rem; }
 .emer-card.advisory h3 { color: var(--orange); }
-.emer-card p    { font-size: .87rem; color: var(--gray-4); line-height: 1.6; }
+.emer-card p    { font-size: .85rem; color: var(--gray-4); line-height: 1.6; }
 .emer-card-footer {
-  margin-top: .8rem; padding-top: .6rem; border-top: 1px solid var(--gray-2);
-  font-size: .68rem; color: var(--gray-3); letter-spacing: .04em;
-  display: flex; justify-content: space-between; align-items: center;
+  margin-top: .75rem; padding-top: .55rem; border-top: 1px solid var(--gray-2);
+  font-size: .66rem; color: var(--gray-3); letter-spacing: .04em;
+  display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: .5rem;
 }
 
-/* BUTTONS */
+/* ── BUTTONS ── */
 .add-btn {
-  display: inline-flex; align-items: center; gap: .4rem;
-  font-family: var(--sans); font-size: .78rem; font-weight: 700;
-  letter-spacing: .06em; text-transform: uppercase;
-  padding: .5rem 1rem; border-radius: 4px; cursor: pointer; border: 1.5px solid;
-  transition: background .2s, color .2s, box-shadow .2s;
+  display: inline-flex; align-items: center; gap: .35rem;
+  font-family: var(--sans); font-size: .76rem; font-weight: 700;
+  letter-spacing: .05em; text-transform: uppercase;
+  padding: .5rem .9rem; border-radius: 4px; cursor: pointer; border: 1.5px solid;
+  transition: background .18s, color .18s; white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
 }
 .add-btn-blue { background: var(--blue); border-color: var(--blue); color: #fff; }
-.add-btn-blue:hover { background: var(--navy); border-color: var(--navy); }
+.add-btn-blue:hover, .add-btn-blue:active { background: var(--navy); border-color: var(--navy); }
 .add-btn-gold { background: var(--gold); border-color: var(--gold); color: #fff; }
-.add-btn-gold:hover { background: #a5751f; border-color: #a5751f; }
-.add-btn-red  { background: var(--red); border-color: var(--red); color: #fff; }
-.add-btn-red:hover  { background: #991b1b; border-color: #991b1b; }
+.add-btn-gold:hover, .add-btn-gold:active { background: #a5751f; border-color: #a5751f; }
+.add-btn-red  { background: var(--red);  border-color: var(--red);  color: #fff; }
+.add-btn-red:hover, .add-btn-red:active  { background: #991b1b; border-color: #991b1b; }
 
 .del-btn {
-  font-size: .65rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  font-size: .63rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
   background: none; border: 1px solid var(--gray-2); color: var(--gray-3);
-  padding: .2rem .5rem; border-radius: 3px; cursor: pointer; transition: all .18s;
-  display: inline-flex; align-items: center; gap: .25rem;
+  padding: .22rem .55rem; border-radius: 3px; cursor: pointer; transition: all .18s;
+  display: inline-flex; align-items: center; gap: .2rem; flex-shrink: 0; white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
 }
-.del-btn:hover { border-color: var(--red); color: var(--red); background: var(--red-bg); }
-.del-lock-icon { font-size: .65rem; line-height: 1; }
+.del-btn:hover, .del-btn:active { border-color: var(--red); color: var(--red); background: var(--red-bg); }
 
-/* MODALS */
+/* ── MODALS ── */
 .overlay {
   display: none; position: fixed; inset: 0;
   background: rgba(15,25,50,.65); z-index: 200;
-  align-items: center; justify-content: center; backdrop-filter: blur(3px);
+  align-items: flex-end; justify-content: center;
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+  padding: 0;
 }
 .overlay.open { display: flex; }
-.modal { background: var(--white); border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,.3); width: 100%; max-width: 480px; overflow: hidden; animation: mIn .22s ease; }
-@keyframes mIn { from{opacity:0;transform:translateY(-14px) scale(.97)} to{opacity:1;transform:none} }
+
+.modal {
+  background: var(--white); width: 100%; max-width: 520px;
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -8px 40px rgba(0,0,0,.25);
+  animation: slideUp .28s cubic-bezier(.32,1,.36,1);
+  max-height: 92dvh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+}
+@keyframes slideUp { from{transform:translateY(100%)} to{transform:translateY(0)} }
+
+/* On larger screens, center the modal instead */
+@media (min-width: 600px) {
+  .overlay { align-items: center; padding: 1rem; }
+  .modal {
+    border-radius: 10px;
+    max-height: 90dvh;
+    animation: mIn .22s ease;
+  }
+  @keyframes mIn { from{opacity:0;transform:translateY(-12px) scale(.97)} to{opacity:1;transform:none} }
+}
+
 .modal-head {
   background: var(--navy); color: #fff;
-  padding: 1.2rem 1.5rem; display: flex; align-items: flex-start; justify-content: space-between;
+  padding: 1.1rem 1.25rem; display: flex; align-items: flex-start; justify-content: space-between;
+  position: sticky; top: 0; z-index: 1;
 }
-.modal-head-text h2 { font-family: var(--serif); font-size: 1rem; font-weight: 700; }
-.modal-head-text p  { font-size: .72rem; color: #7a9ec4; margin-top: .15rem; font-weight: 300; }
+/* Pull handle indicator for mobile sheet */
+.modal-head::before {
+  content: none;
+}
+.modal::before {
+  content: '';
+  display: block;
+  width: 36px; height: 4px;
+  background: var(--gray-2);
+  border-radius: 2px;
+  margin: .6rem auto .2rem;
+}
+@media (min-width: 600px) {
+  .modal::before { display: none; }
+}
+
+.modal-head-text h2 { font-family: var(--serif); font-size: .97rem; font-weight: 700; }
+.modal-head-text p  { font-size: .7rem; color: #7a9ec4; margin-top: .12rem; font-weight: 300; }
 .modal-close {
-  background: rgba(255,255,255,.1); border: none; color: #fff;
+  background: rgba(255,255,255,.12); border: none; color: #fff;
   width: 28px; height: 28px; border-radius: 50%; font-size: 1rem; cursor: pointer;
-  display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: background .18s;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  transition: background .18s; -webkit-tap-highlight-color: transparent;
 }
 .modal-close:hover { background: rgba(255,255,255,.22); }
-.modal-body { padding: 1.5rem; }
+.modal-body { padding: 1.25rem; }
 .modal-head.red-head { background: var(--red); }
+.modal-head.red-head .modal-head-text p { color: #fca5a5; }
 
-/* PIN MODAL LOCK ICON */
-.pin-lock-graphic {
-  text-align: center; padding: .8rem 0 1rem;
-  font-size: 2rem; line-height: 1;
-}
+/* Pin graphic */
+.pin-lock-graphic { text-align: center; padding: .6rem 0 .8rem; font-size: 2rem; line-height: 1; }
 .pin-modal-note {
-  font-size: .73rem; color: var(--gray-3); text-align: center;
+  font-size: .72rem; color: var(--gray-3); text-align: center;
   margin-bottom: 1rem; line-height: 1.5;
 }
 
-/* FORM */
+/* ── FORMS ── */
 .form-group { margin-bottom: 1rem; }
-label { display: block; font-size: .73rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--navy); margin-bottom: .35rem; }
-input[type="text"], input[type="password"], input[type="date"], input[type="time"], textarea, select {
+label { display: block; font-size: .71rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--navy); margin-bottom: .3rem; }
+input[type="text"],
+input[type="password"],
+input[type="date"],
+input[type="time"],
+textarea,
+select {
   width: 100%; background: var(--gray-1); border: 1px solid var(--gray-2);
   border-radius: 4px; color: var(--text); font-family: var(--sans);
-  font-size: .9rem; padding: .55rem .85rem; outline: none; transition: border-color .18s, box-shadow .18s;
+  font-size: 1rem; /* 16px prevents iOS zoom */
+  padding: .6rem .85rem; outline: none; transition: border-color .18s, box-shadow .18s;
+  -webkit-appearance: none; appearance: none;
 }
-input:focus, textarea:focus, select:focus { border-color: var(--blue-l); box-shadow: 0 0 0 3px rgba(46,111,212,.12); background: #fff; }
-input[type="password"] { font-family: var(--mono); letter-spacing: .3em; font-size: 1.1rem; }
+input:focus, textarea:focus, select:focus {
+  border-color: var(--blue-l); box-shadow: 0 0 0 3px rgba(46,111,212,.12); background: #fff;
+}
+input[type="password"] { font-family: var(--mono); letter-spacing: .25em; }
 textarea { resize: vertical; min-height: 80px; }
 .form-row { display: flex; gap: .75rem; }
-.form-row .form-group { flex: 1; }
+.form-row .form-group { flex: 1; min-width: 0; }
 .modal-divider { border: none; border-top: 1px solid var(--gray-2); margin: 1rem 0; }
-.submit-btn { width: 100%; padding: .7rem; border: none; border-radius: 4px; font-family: var(--sans); font-size: .9rem; font-weight: 700; cursor: pointer; letter-spacing: .06em; margin-top: .3rem; transition: background .18s; }
+.submit-btn {
+  width: 100%; padding: .75rem; border: none; border-radius: 6px;
+  font-family: var(--sans); font-size: 1rem; font-weight: 700; cursor: pointer;
+  letter-spacing: .04em; margin-top: .25rem; transition: background .18s;
+  -webkit-tap-highlight-color: transparent;
+}
 .btn-primary { background: var(--blue); color: #fff; }
-.btn-primary:hover { background: var(--navy); }
+.btn-primary:hover, .btn-primary:active { background: var(--navy); }
 .btn-gold { background: var(--gold); color: #fff; }
-.btn-gold:hover { background: #a5751f; }
+.btn-gold:hover, .btn-gold:active { background: #a5751f; }
 .btn-red { background: var(--red); color: #fff; }
-.btn-red:hover { background: #991b1b; }
-.pin-err { font-size: .74rem; color: var(--red); display: none; margin-top: .35rem; font-weight: 600; background: var(--red-bg); padding: .4rem .6rem; border-radius: 3px; border: 1px solid #fca5a5; }
+.btn-red:hover, .btn-red:active { background: #991b1b; }
+.pin-err {
+  font-size: .73rem; color: var(--red); display: none;
+  margin-top: .35rem; font-weight: 600;
+  background: var(--red-bg); padding: .4rem .6rem;
+  border-radius: 3px; border: 1px solid #fca5a5;
+}
 
-/* MISC */
+/* ── IMAGE UPLOAD ── */
+.img-upload-label {
+  display: flex; align-items: center; gap: .6rem;
+  border: 2px dashed var(--gray-2); border-radius: var(--r);
+  padding: .75rem 1rem; cursor: pointer; transition: border-color .18s, background .18s;
+  font-size: .82rem; color: var(--gray-3); background: var(--gray-1);
+}
+.img-upload-label:hover { border-color: var(--blue-l); background: #f0f5ff; color: var(--blue); }
+.img-upload-label svg { flex-shrink: 0; }
+input[type="file"] { display: none; }
+.img-preview-wrap { margin-top: .6rem; position: relative; display: inline-block; }
+.img-preview-wrap img { max-width: 100%; max-height: 180px; border-radius: var(--r); border: 1px solid var(--gray-2); display: block; }
+.img-preview-clear {
+  position: absolute; top: .3rem; right: .3rem;
+  background: rgba(0,0,0,.55); color: #fff; border: none; border-radius: 50%;
+  width: 22px; height: 22px; font-size: .8rem; cursor: pointer; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+}
+.post-img-wrap { margin: .75rem 0 .25rem; }
+.post-img {
+  max-width: 100%; border-radius: var(--r); border: 1px solid var(--gray-2);
+  cursor: zoom-in; display: block; max-height: 320px; object-fit: cover;
+  transition: opacity .18s;
+}
+.post-img:hover { opacity: .9; }
+
+/* ── IMAGE VIEWER OVERLAY ── */
+#img-viewer-overlay { background: rgba(0,0,0,.85); align-items: center; justify-content: center; padding: 1rem; }
+#img-viewer-overlay .img-viewer-inner { position: relative; max-width: 95vw; max-height: 90dvh; }
+#img-viewer-overlay img { max-width: 100%; max-height: 88dvh; border-radius: var(--r); display: block; box-shadow: 0 8px 40px rgba(0,0,0,.6); }
+.img-viewer-close {
+  position: absolute; top: -.75rem; right: -.75rem;
+  background: var(--white); border: none; border-radius: 50%;
+  width: 32px; height: 32px; font-size: 1.1rem; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,.3); z-index: 1;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── MISC ── */
 .empty-state { text-align: center; padding: 2.5rem 1rem; color: var(--gray-3); font-size: .85rem; }
-.empty-icon-text { font-family: var(--mono); font-size: .8rem; margin-bottom: .5rem; letter-spacing: .1em; color: var(--gray-3); }
-.loading-text { text-align: center; padding: 2rem; color: var(--gray-3); font-size: .82rem; font-family: var(--mono); letter-spacing: .08em; }
+.empty-icon-text { font-family: var(--mono); font-size: .78rem; margin-bottom: .5rem; letter-spacing: .1em; }
+.loading-text { text-align: center; padding: 2rem; color: var(--gray-3); font-size: .8rem; font-family: var(--mono); letter-spacing: .08em; }
 
-/* FOOTER */
-footer { background: var(--navy-d); color: #6a8aaa; text-align: center; padding: 2rem; font-size: .75rem; letter-spacing: .04em; line-height: 1.8; }
+/* ── FOOTER ── */
+footer { background: var(--navy-d); color: #6a8aaa; text-align: center; padding: 1.75rem 1.25rem; font-size: .73rem; letter-spacing: .03em; line-height: 1.8; }
 footer strong { color: #9ab0d0; }
 
+/* ── RESPONSIVE ── */
 @media (max-width: 720px) {
   .page-body { grid-template-columns: 1fr; }
-  .header-main { flex-wrap: wrap; }
-  .hero-inner h1 { font-size: 1.4rem; }
-  .nav-tab { padding: .7rem .8rem; font-size: .74rem; }
-  .utility-bar { font-size: .65rem; }
+  .sidebar-col { order: -1; /* sidebar above content on mobile is noisy, keep below */ }
+
+  /* Collapse utility bar on very small screens */
+  .utility-links .hide-mobile { display: none; }
+  .ann-footer-right { display: none !important; }
+}
+
+@media (max-width: 480px) {
+  .wordmark-sub { display: none; }
+  .city-seal { width: 42px; height: 42px; }
+  .header-main { padding: .6rem 1rem; gap: .75rem; }
+  .hero-band { padding: 1.5rem 1rem 1.25rem; }
+  .page-body { padding: 1rem 1rem 2.5rem; }
+  .form-row { flex-direction: column; gap: 0; }
+  .emer-card-footer { flex-direction: column; align-items: flex-start; gap: .4rem; }
 }
 </style>
 </head>
@@ -630,13 +957,13 @@ footer strong { color: #9ab0d0; }
 <!-- UTILITY BAR -->
 <div class="utility-bar">
   <div class="utility-links">
-    <span>Official Stilton County Community Portal</span>
-    <span>|</span>
+    <span class="hide-mobile">Official Stilton County Community Portal</span>
+    <span class="hide-mobile">|</span>
     <a href="#">Contact Staff</a>
     <span>|</span>
-    <a href="#">Server Rules</a>
+    <a href="#">Rules</a>
     <span>|</span>
-    <a href="#">Join Server</a>
+    <a href="#">Join</a>
   </div>
   <div class="utility-clock" id="clockDisplay"></div>
 </div>
@@ -658,10 +985,10 @@ footer strong { color: #9ab0d0; }
     </svg>
     <div class="header-wordmark">
       <div class="wordmark-city">Stilton County <em>Community</em></div>
-      <div class="wordmark-sub">Official City Government Portal &nbsp;·&nbsp; Brick Rigs Roleplay</div>
+      <div class="wordmark-sub">Official City Government Portal · Brick Rigs Roleplay</div>
     </div>
     <div class="header-right">
-      <div class="server-status"><span class="status-dot"></span> Server Online</div>
+      <div class="server-status"><span class="status-dot"></span> Online</div>
     </div>
   </div>
 </header>
@@ -670,8 +997,10 @@ footer strong { color: #9ab0d0; }
 <div class="nav-bar">
   <div class="nav-inner">
     <button class="nav-tab active" id="tab-ann"  onclick="showPage('ann')">Announcements</button>
-    <button class="nav-tab"        id="tab-evt"  onclick="showPage('evt')">Event Board</button>
-    <button class="nav-tab"        id="tab-emer" onclick="showPage('emer')">Emergency Status</button>
+    <button class="nav-tab"        id="tab-evt"  onclick="showPage('evt')">Events</button>
+    <button class="nav-tab"        id="tab-emer" onclick="showPage('emer')">Emergency</button>
+    <button class="nav-tab"        id="tab-pd"   onclick="showPage('pd')">Police Dept</button>
+    <button class="nav-tab"        id="tab-fd"   onclick="showPage('fd')">Fire Dept</button>
   </div>
 </div>
 
@@ -681,52 +1010,40 @@ footer strong { color: #9ab0d0; }
     <div class="hero-inner">
       <div class="hero-eyebrow">Public Information Office</div>
       <h1>Announcements &amp; Notices</h1>
-      <p>Official communications from Stilton County Community staff. Check here for server updates, rule changes, and important notices.</p>
+      <p>Official communications from Stilton County Community staff.</p>
     </div>
   </div>
   <div class="page-body">
     <div>
       <div class="section-label">
         <h2>Latest Announcements</h2>
-        <button class="add-btn add-btn-blue" onclick="openPinModal('ann')">Post Announcement</button>
+        <button class="add-btn add-btn-blue" onclick="openPinModal('ann')">+ Post</button>
       </div>
-      <div id="ann-list"><div class="loading-text">Loading announcements...</div></div>
+      <div id="ann-list"><div class="loading-text">Loading announcements…</div></div>
     </div>
-    <div>
+    <div class="sidebar-col">
       <div class="widget">
         <div class="widget-header">About This Portal</div>
         <div class="widget-body">
-          <p>This is the official web presence for the <strong>Stilton County Community</strong> Brick Rigs roleplay server. All announcements, events, and emergency alerts posted here are official.</p>
+          <p>Official web presence for the <strong>Stilton County Community</strong> Brick Rigs roleplay server.</p>
         </div>
       </div>
       <div class="widget">
         <div class="widget-header">Quick Links</div>
-        <div class="widget-body" style="padding:.5rem 1rem;">
-          <div class="quick-link">
-            <span class="quick-link-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
-            Server Rules
-          </div>
-          <div class="quick-link">
-            <svg style="width:14px;height:14px;stroke:var(--blue);fill:none;stroke-width:2;flex-shrink:0" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-            Event Schedule
-          </div>
-          <div class="quick-link">
-            <svg style="width:14px;height:14px;stroke:var(--blue);fill:none;stroke-width:2;flex-shrink:0" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-            Emergency Alerts
-          </div>
-          <div class="quick-link">
-            <svg style="width:14px;height:14px;stroke:var(--blue);fill:none;stroke-width:2;flex-shrink:0" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-            Contact Staff
-          </div>
+        <div class="widget-body" style="padding:.4rem 1rem;">
+          <div class="quick-link">📄 Server Rules</div>
+          <div class="quick-link">📅 Event Schedule</div>
+          <div class="quick-link">⚠️ Emergency Alerts</div>
+          <div class="quick-link">💬 Contact Staff</div>
         </div>
       </div>
       <div class="widget">
         <div class="widget-header">Portal Status</div>
         <div class="widget-body">
-          <p style="font-size:.78rem;color:var(--gray-4);line-height:1.8;">
+          <p style="font-size:.78rem;color:var(--gray-4);line-height:1.9;">
             <strong style="color:var(--navy);">Server:</strong> Online<br>
             <strong style="color:var(--navy);">Database:</strong> Firebase Firestore<br>
-            <strong style="color:var(--navy);">Last Updated:</strong> <span id="last-updated"></span>
+            <strong style="color:var(--navy);">Updated:</strong> <span id="last-updated"></span>
           </p>
         </div>
       </div>
@@ -740,31 +1057,31 @@ footer strong { color: #9ab0d0; }
     <div class="hero-inner">
       <div class="hero-eyebrow">Community Services</div>
       <h1>Event Board</h1>
-      <p>Browse upcoming events, scheduled roleplay sessions, and community activities in Stilton County.</p>
+      <p>Upcoming events, roleplay sessions, and community activities.</p>
     </div>
   </div>
   <div class="page-body">
     <div>
       <div class="section-label">
         <h2>Upcoming Events</h2>
-        <button class="add-btn add-btn-gold" onclick="openPinModal('evt')">Add Event</button>
+        <button class="add-btn add-btn-gold" onclick="openPinModal('evt')">+ Add Event</button>
       </div>
-      <div id="evt-list"><div class="loading-text">Loading events...</div></div>
+      <div id="evt-list"><div class="loading-text">Loading events…</div></div>
     </div>
-    <div>
+    <div class="sidebar-col">
       <div class="widget">
         <div class="widget-header">Event Information</div>
         <div class="widget-body">
-          <p>All events listed here are official Stilton County Community activities. Times are approximate. Check announcements for any updates or changes to events.</p>
+          <p>All events are official Stilton County Community activities. Times are approximate.</p>
         </div>
       </div>
       <div class="widget">
         <div class="widget-header">Event Categories</div>
-        <div class="widget-body" style="padding:.5rem 1rem;">
-          <div class="quick-link">Police Operations</div>
-          <div class="quick-link">Fire Department Drills</div>
-          <div class="quick-link">Racing Events</div>
-          <div class="quick-link">Community Activities</div>
+        <div class="widget-body" style="padding:.4rem 1rem;">
+          <div class="quick-link">🚔 Police Operations</div>
+          <div class="quick-link">🚒 Fire Department Drills</div>
+          <div class="quick-link">🏁 Racing Events</div>
+          <div class="quick-link">🎉 Community Activities</div>
         </div>
       </div>
     </div>
@@ -777,7 +1094,7 @@ footer strong { color: #9ab0d0; }
     <div class="hero-inner">
       <div class="hero-eyebrow">Office of Emergency Management</div>
       <h1>Emergency Status</h1>
-      <p>Live emergency alert feed for Stilton County. Monitor active incidents and advisories issued by emergency services.</p>
+      <p>Live alert feed for Stilton County. Monitor active incidents and advisories.</p>
     </div>
   </div>
 
@@ -788,7 +1105,7 @@ footer strong { color: #9ab0d0; }
       </svg>
       <div>
         <h3>All Clear — No Active Emergencies</h3>
-        <p>Stilton County is currently operating normally. No active alerts or advisories at this time.</p>
+        <p>Stilton County is operating normally. No active alerts at this time.</p>
       </div>
     </div>
     <div class="active-alert-box" id="active-alert-msg" style="display:none;">
@@ -798,26 +1115,102 @@ footer strong { color: #9ab0d0; }
       </svg>
       <div>
         <h3>Active Emergency Alert — Stilton County</h3>
-        <p>One or more active alerts are listed below. Follow all official directives from emergency services.</p>
+        <p>Active alerts listed below. Follow all official directives from emergency services.</p>
       </div>
     </div>
   </div>
 
-  <div style="max-width:1200px;margin:0 auto;padding:.8rem 2rem 0;display:flex;justify-content:flex-end;">
-    <button class="add-btn add-btn-red" onclick="openPinModal('emer')">Issue Alert</button>
+  <div class="emer-issue-row">
+    <button class="add-btn add-btn-red" onclick="openPinModal('emer')">⚠ Issue Alert</button>
   </div>
 
   <div class="emer-cards-area">
-    <div id="emer-list"><div class="loading-text">Loading emergency status...</div></div>
+    <div id="emer-list"><div class="loading-text">Loading emergency status…</div></div>
+  </div>
+</div>
+
+<!-- ======================== POLICE DEPARTMENT ======================== -->
+<div class="page" id="page-pd">
+  <div class="hero-band pd-hero">
+    <div class="hero-inner">
+      <div class="hero-eyebrow">Stilton County Police Department</div>
+      <h1>Police Department Board</h1>
+      <p>Official communications, BOLOs, arrest reports, and policy updates from the SCPD.</p>
+    </div>
+  </div>
+  <div class="page-body">
+    <div>
+      <div class="section-label">
+        <h2>PD Posts &amp; Notices</h2>
+        <button class="add-btn" style="background:var(--pd-blue);border-color:var(--pd-blue);color:#fff;" onclick="openPinModal('pd')">Post to PD Board</button>
+      </div>
+      <div id="pd-list"><div class="loading-text">Loading PD posts…</div></div>
+    </div>
+    <div class="sidebar-col">
+      <div class="widget">
+        <div class="widget-header" style="background:var(--pd-dark);">Department Info</div>
+        <div class="widget-body">
+          <p style="margin-bottom:.6rem;"><span class="dept-badge dept-badge-pd">SCPD</span></p>
+          <p>Official board for the <strong>Stilton County Police Department</strong>. Only officers with the PD PIN may post or remove entries. The staff PIN also grants access.</p>
+        </div>
+      </div>
+      <div class="widget">
+        <div class="widget-header" style="background:var(--pd-dark);">Post Categories</div>
+        <div class="widget-body" style="padding:.4rem 1rem;">
+          <div class="quick-link" style="color:var(--pd-blue);">General Notices</div>
+          <div class="quick-link" style="color:var(--pd-blue);">BOLOs</div>
+          <div class="quick-link" style="color:var(--pd-blue);">Policy Updates</div>
+          <div class="quick-link" style="color:var(--pd-blue);">Arrest Reports</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== FIRE DEPARTMENT ======================== -->
+<div class="page" id="page-fd">
+  <div class="hero-band fd-hero">
+    <div class="hero-inner">
+      <div class="hero-eyebrow">Stilton County Fire Department</div>
+      <h1>Fire Department Board</h1>
+      <p>Official communications, fire alerts, drill notices, and department updates from the SCFD.</p>
+    </div>
+  </div>
+  <div class="page-body">
+    <div>
+      <div class="section-label">
+        <h2>FD Posts &amp; Notices</h2>
+        <button class="add-btn" style="background:var(--fd-red);border-color:var(--fd-red);color:#fff;" onclick="openPinModal('fd')">Post to FD Board</button>
+      </div>
+      <div id="fd-list"><div class="loading-text">Loading FD posts…</div></div>
+    </div>
+    <div class="sidebar-col">
+      <div class="widget">
+        <div class="widget-header" style="background:var(--fd-dark);">Department Info</div>
+        <div class="widget-body">
+          <p style="margin-bottom:.6rem;"><span class="dept-badge dept-badge-fd">SCFD</span></p>
+          <p>Official board for the <strong>Stilton County Fire Department</strong>. Only firefighters with the FD PIN may post or remove entries. The staff PIN also grants access.</p>
+        </div>
+      </div>
+      <div class="widget">
+        <div class="widget-header" style="background:var(--fd-dark);">Post Categories</div>
+        <div class="widget-body" style="padding:.4rem 1rem;">
+          <div class="quick-link" style="color:var(--fd-red);">General Notices</div>
+          <div class="quick-link" style="color:var(--fd-red);">Fire Alerts</div>
+          <div class="quick-link" style="color:var(--fd-red);">Drill Notices</div>
+          <div class="quick-link" style="color:var(--fd-red);">Dept Updates</div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
 <!-- ======================== PIN MODAL ======================== -->
 <div class="overlay" id="pin-overlay">
   <div class="modal">
-    <div class="modal-head">
+    <div class="modal-head" id="pin-modal-head">
       <div class="modal-head-text">
-        <h2>Staff Authentication Required</h2>
+        <h2>Staff Authentication</h2>
         <p id="pin-subtitle">Enter your staff PIN to access this function</p>
       </div>
       <button class="modal-close" onclick="closeOverlay('pin-overlay')">&#x2715;</button>
@@ -827,7 +1220,9 @@ footer strong { color: #9ab0d0; }
       <p class="pin-modal-note">This action is restricted to authorized staff only.<br>Enter your PIN to continue.</p>
       <div class="form-group">
         <label>Staff Access PIN</label>
-        <input type="password" id="pin-input" placeholder="••••••••" maxlength="16" onkeydown="if(event.key==='Enter')verifyPin()">
+        <input type="password" id="pin-input" placeholder="Enter PIN" maxlength="16"
+               inputmode="numeric" autocomplete="current-password"
+               onkeydown="if(event.key==='Enter')verifyPin()">
         <div class="pin-err" id="pin-err">⚠ Incorrect PIN. Please try again.</div>
       </div>
       <button class="submit-btn btn-primary" onclick="verifyPin()">Verify &amp; Continue</button>
@@ -857,15 +1252,15 @@ footer strong { color: #9ab0d0; }
       </div>
       <div class="form-group">
         <label>Announcement Title</label>
-        <input type="text" id="ann-title" placeholder="e.g. New Roleplay Guidelines Effective...">
+        <input type="text" id="ann-title" placeholder="e.g. New Roleplay Guidelines Effective…" autocomplete="off">
       </div>
       <div class="form-group">
         <label>Body / Content</label>
-        <textarea id="ann-body" rows="4" placeholder="Write the full announcement here..."></textarea>
+        <textarea id="ann-body" rows="4" placeholder="Write the full announcement here…"></textarea>
       </div>
       <div class="form-group">
         <label>Issued By</label>
-        <input type="text" id="ann-author" placeholder="e.g. Server Administration, Chief of Police...">
+        <input type="text" id="ann-author" placeholder="e.g. Server Administration" autocomplete="off">
       </div>
       <hr class="modal-divider">
       <button class="submit-btn btn-primary" onclick="submitAnn()">Post Announcement</button>
@@ -886,11 +1281,11 @@ footer strong { color: #9ab0d0; }
     <div class="modal-body">
       <div class="form-group">
         <label>Event Name</label>
-        <input type="text" id="evt-title" placeholder="e.g. Downtown Police Pursuit Night">
+        <input type="text" id="evt-title" placeholder="e.g. Downtown Police Pursuit Night" autocomplete="off">
       </div>
       <div class="form-group">
         <label>Description</label>
-        <textarea id="evt-desc" rows="3" placeholder="Describe the event, who should attend, what will happen..."></textarea>
+        <textarea id="evt-desc" rows="3" placeholder="Describe the event…"></textarea>
       </div>
       <div class="form-row">
         <div class="form-group">
@@ -904,7 +1299,7 @@ footer strong { color: #9ab0d0; }
       </div>
       <div class="form-group">
         <label>Location</label>
-        <input type="text" id="evt-loc" placeholder="e.g. Stilton City Hall, Route 9 Highway...">
+        <input type="text" id="evt-loc" placeholder="e.g. Stilton City Hall" autocomplete="off">
       </div>
       <hr class="modal-divider">
       <button class="submit-btn btn-gold" onclick="submitEvt()">Add to Event Board</button>
@@ -932,15 +1327,15 @@ footer strong { color: #9ab0d0; }
       </div>
       <div class="form-group">
         <label>Alert Title</label>
-        <input type="text" id="emer-title" placeholder="e.g. High-Speed Pursuit in Progress — Route 7">
+        <input type="text" id="emer-title" placeholder="e.g. High-Speed Pursuit in Progress — Route 7" autocomplete="off">
       </div>
       <div class="form-group">
         <label>Incident Details</label>
-        <textarea id="emer-body" rows="3" placeholder="Describe the situation and any public instructions..."></textarea>
+        <textarea id="emer-body" rows="3" placeholder="Describe the situation and public instructions…"></textarea>
       </div>
       <div class="form-group">
         <label>Issued By</label>
-        <input type="text" id="emer-author" placeholder="e.g. Stilton County Sheriff's Department">
+        <input type="text" id="emer-author" placeholder="e.g. Stilton County Sheriff's Department" autocomplete="off">
       </div>
       <hr class="modal-divider">
       <button class="submit-btn btn-red" onclick="submitEmer()">Issue Official Alert</button>
@@ -948,12 +1343,114 @@ footer strong { color: #9ab0d0; }
   </div>
 </div>
 
+<!-- ======================== PD POST MODAL ======================== -->
+<div class="overlay" id="pd-overlay">
+  <div class="modal">
+    <div class="modal-head pd-head">
+      <div class="modal-head-text">
+        <h2>Post to PD Board</h2>
+        <p>Stilton County Police Department — Officer Communications</p>
+      </div>
+      <button class="modal-close" onclick="closeOverlay('pd-overlay')">&#x2715;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Post Type</label>
+        <select id="pd-type">
+          <option value="GENERAL">General Notice</option>
+          <option value="BOLO">BOLO — Be On Lookout</option>
+          <option value="POLICY">Policy Update</option>
+          <option value="ARREST">Arrest Report</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Title / Subject</label>
+        <input type="text" id="pd-title" placeholder="e.g. BOLO — Suspect in Blue Sedan, Route 9" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label>Details</label>
+        <textarea id="pd-body" rows="4" placeholder="Provide full details of the notice, BOLO description, or report…"></textarea>
+      </div>
+      <div class="form-group">
+        <label>Posted By (Officer / Rank)</label>
+        <input type="text" id="pd-author" placeholder="e.g. Sgt. Johnson, Chief Williams" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label>Attach Image <span style="font-weight:400;color:var(--gray-3);text-transform:none;letter-spacing:0">(optional)</span></label>
+        <label class="img-upload-label" for="pd-img">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          Choose photo or screenshot…
+        </label>
+        <input type="file" id="pd-img" accept="image/*" onchange="previewImg(this,'pd-img-preview')">
+        <div id="pd-img-preview"></div>
+      </div>
+      <hr class="modal-divider">
+      <button id="pd-submit-btn" class="submit-btn" style="background:var(--pd-blue);color:#fff;" onclick="submitPD()">Post to PD Board</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== FD POST MODAL ======================== -->
+<div class="overlay" id="fd-overlay">
+  <div class="modal">
+    <div class="modal-head fd-head">
+      <div class="modal-head-text">
+        <h2>Post to FD Board</h2>
+        <p>Stilton County Fire Department — Firefighter Communications</p>
+      </div>
+      <button class="modal-close" onclick="closeOverlay('fd-overlay')">&#x2715;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Post Type</label>
+        <select id="fd-type">
+          <option value="GENERAL">General Notice</option>
+          <option value="ALERT">Fire Alert</option>
+          <option value="DRILL">Drill Notice</option>
+          <option value="UPDATE">Department Update</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Title / Subject</label>
+        <input type="text" id="fd-title" placeholder="e.g. Structure Fire — 4th &amp; Main, Units Respond" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label>Details</label>
+        <textarea id="fd-body" rows="4" placeholder="Describe the incident, drill schedule, or department update…"></textarea>
+      </div>
+      <div class="form-group">
+        <label>Posted By (Firefighter / Rank)</label>
+        <input type="text" id="fd-author" placeholder="e.g. Capt. Martinez, Chief Rivera" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label>Attach Image <span style="font-weight:400;color:var(--gray-3);text-transform:none;letter-spacing:0">(optional)</span></label>
+        <label class="img-upload-label" for="fd-img">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          Choose photo or screenshot…
+        </label>
+        <input type="file" id="fd-img" accept="image/*" onchange="previewImg(this,'fd-img-preview')">
+        <div id="fd-img-preview"></div>
+      </div>
+      <hr class="modal-divider">
+      <button id="fd-submit-btn" class="submit-btn" style="background:var(--fd-red);color:#fff;" onclick="submitFD()">Post to FD Board</button>
+    </div>
+  </div>
+</div>
+
 <!-- FOOTER -->
 <footer>
   <strong>Stilton County Community</strong> — Official City Government Portal<br>
-  Brick Rigs Roleplay Division &nbsp;·&nbsp; All content is for roleplay purposes only<br>
-  <span style="font-size:.65rem;opacity:.6;">Stilton County Community &middot; Unofficial Fan Server &middot; Not affiliated with Brick Rigs or its developers</span>
+  Brick Rigs Roleplay Division · All content is for roleplay purposes only<br>
+  <span style="font-size:.65rem;opacity:.55;">Unofficial Fan Server · Not affiliated with Brick Rigs or its developers</span>
 </footer>
+
+<!-- ======================== IMAGE VIEWER ======================== -->
+<div class="overlay" id="img-viewer-overlay" onclick="closeOverlay('img-viewer-overlay')">
+  <div class="img-viewer-inner">
+    <button class="img-viewer-close" onclick="closeOverlay('img-viewer-overlay')">&#x2715;</button>
+    <img id="img-viewer-img" src="" alt="Full size image">
+  </div>
+</div>
 
 </body>
 </html>
