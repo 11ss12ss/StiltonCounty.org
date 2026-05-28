@@ -10,7 +10,7 @@
   import { initializeApp }      from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getFirestore,
            collection, addDoc, deleteDoc,
-           doc, onSnapshot,
+           doc, onSnapshot, setDoc, updateDoc,
            serverTimestamp, query,
            orderBy }            from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
@@ -31,9 +31,16 @@
   const STAFF_PIN = "11223344";   // General staff / admin
   const PD_PIN    = "22334455";   // Police Department
   const FD_PIN    = "33445566";   // Fire Department
+  const CAD_PIN   = "Emer";         // CAD system
   // ──────────────────────────────────────────────────────────────
 
   let pendingAction = null;
+
+  // ── CAD STATE ────────────────────────────────────────────────
+  let cadUnitId   = null;
+  let cadCallsign = null;
+  let cadDept     = null;
+  let cadSignedIn = false;
 
   // ── CLOCK ─────────────────────────────────────────────────────
   function tick() {
@@ -43,6 +50,10 @@
       d.toLocaleDateString("en-US", {weekday:"short",month:"short",day:"numeric",year:"numeric"})
       + "  " +
       d.toLocaleTimeString("en-US", {hour:"2-digit",minute:"2-digit",second:"2-digit"});
+    const cc = document.getElementById("cad-clock-disp");
+    if (cc) cc.textContent = d.toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+    const cd = document.getElementById("cad-date-disp");
+    if (cd) cd.textContent = d.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
   }
   setInterval(tick, 1000); tick();
 
@@ -107,6 +118,7 @@
     let valid = false;
     if (dept === 'pd')       valid = (val === PD_PIN    || val === STAFF_PIN);
     else if (dept === 'fd')  valid = (val === FD_PIN    || val === STAFF_PIN);
+    else if (action === 'cad') valid = (val === CAD_PIN || val === STAFF_PIN);
     else                     valid = (val === STAFF_PIN);
 
     if (valid) {
@@ -437,6 +449,189 @@
     if (!json.success) throw new Error("Imgur upload failed: " + (json.data?.error || "unknown error"));
     return json.data.link;
   }
+
+
+  // ── CAD SYSTEM ───────────────────────────────────────────────
+  const CAD_STATUS_META = {
+    AVAILABLE:  { label:"Available",    color:"#16a34a", bg:"#dcfce7" },
+    BUSY:       { label:"Busy",         color:"#ca8a04", bg:"#fef9c3" },
+    RESPONDING: { label:"Responding",   color:"#2563eb", bg:"#dbeafe" },
+    ON_SCENE:   { label:"On Scene",     color:"#7c3aed", bg:"#ede9fe" },
+    TRAFFIC:    { label:"Traffic Stop", color:"#0891b2", bg:"#cffafe" },
+  };
+  const INC_META = {
+    PURSUIT:     { label:"Pursuit",       color:"#dc2626" },
+    FIGHT:       { label:"Fight/Assault", color:"#ea580c" },
+    FIRE:        { label:"Structure Fire",color:"#d97706" },
+    ACCIDENT:    { label:"Accident",      color:"#0284c7" },
+    TRAFFIC:     { label:"Traffic Stop",  color:"#0891b2" },
+    MEDICAL:     { label:"Medical",       color:"#16a34a" },
+    DISTURBANCE: { label:"Disturbance",   color:"#7c3aed" },
+    OTHER:       { label:"Other",         color:"#6b7280" },
+  };
+
+
+  window.cadUpdateRoles = function() {
+    const dept = document.getElementById("cad-login-dept").value;
+    const sel  = document.getElementById("cad-login-role");
+    const roles = {
+      PD:  ["Patrol Officer","Senior Officer","Corporal","Sergeant","Lieutenant","Captain","Deputy Chief","Chief of Police"],
+      FD:  ["Firefighter","Senior Firefighter","Driver/Engineer","Lieutenant","Captain","Battalion Chief","Deputy Chief","Fire Chief"],
+      EMS: ["EMT","Senior EMT","Paramedic","Senior Paramedic","Field Supervisor","EMS Lieutenant","EMS Captain","EMS Director"],
+    };
+    sel.innerHTML = (roles[dept] || roles.PD).map(r => `<option value="${r}">${r}</option>`).join("");
+  };
+
+  window.openCadLogin = function() {
+    document.getElementById("cad-login-pin").value = "";
+    document.getElementById("cad-login-pin-err").style.display = "none";
+    openOverlay("cad-login-overlay");
+    setTimeout(() => document.getElementById("cad-login-pin").focus(), 120);
+  };
+
+  window.cadSignIn = async function() {
+    const pin  = document.getElementById("cad-login-pin").value;
+    const call = document.getElementById("cad-login-callsign").value.trim().toUpperCase();
+    const dept = document.getElementById("cad-login-dept").value;
+    const role = document.getElementById("cad-login-role").value;
+
+    // Verify PIN first
+    if (pin !== CAD_PIN && pin !== STAFF_PIN) {
+      document.getElementById("cad-login-pin-err").style.display = "block";
+      document.getElementById("cad-login-pin").value = "";
+      document.getElementById("cad-login-pin").focus();
+      return;
+    }
+    if (!call) { alert("Please enter your callsign."); return; }
+
+    closeOverlay("cad-login-overlay");
+    cadCallsign = call;
+    cadDept     = dept;
+    cadUnitId   = dept + "_" + call;
+    cadSignedIn = true;
+
+    const deptLabel = dept === "PD" ? "Police" : dept === "FD" ? "Fire" : "EMS";
+    document.getElementById("cad-my-callsign").textContent = call;
+    document.getElementById("cad-my-dept").textContent = role + " · " + deptLabel;
+    document.getElementById("cad-signin-panel").style.display = "none";
+    document.getElementById("cad-my-panel").style.display = "block";
+
+    await setDoc(doc(db, "cad_units", cadUnitId), {
+      callsign: cadCallsign, dept: cadDept, role, status: "AVAILABLE",
+      assignment: "", updatedAt: serverTimestamp()
+    });
+    cadSetStatusUI("AVAILABLE");
+  };
+
+  window.cadGoOffDuty = async function() {
+    if (!cadUnitId) return;
+    if (!confirm("Go off duty and sign out of CAD?")) return;
+    await deleteDoc(doc(db, "cad_units", cadUnitId));
+    cadUnitId = null; cadCallsign = null; cadDept = null; cadSignedIn = false;
+    document.getElementById("cad-signin-panel").style.display = "block";
+    document.getElementById("cad-my-panel").style.display     = "none";
+    document.getElementById("cad-login-callsign").value = "";
+  };
+
+  window.cadSetStatus = async function(status) {
+    if (!cadUnitId) return;
+    const assignment = document.getElementById("cad-my-assignment").value.trim();
+    await updateDoc(doc(db, "cad_units", cadUnitId), { status, assignment, updatedAt: serverTimestamp() });
+    cadSetStatusUI(status);
+  };
+
+  function cadSetStatusUI(status) {
+    document.querySelectorAll(".cad-status-btn").forEach(b => b.classList.remove("cad-btn-active"));
+    const btn = document.getElementById("cad-btn-" + status);
+    if (btn) btn.classList.add("cad-btn-active");
+    const m = CAD_STATUS_META[status] || CAD_STATUS_META.AVAILABLE;
+    const badge = document.getElementById("cad-my-status-badge");
+    badge.textContent = m.label;
+    badge.style.background = m.bg;
+    badge.style.color = m.color;
+  }
+
+  window.cadUpdateAssignment = async function() {
+    if (!cadUnitId) return;
+    const assignment = document.getElementById("cad-my-assignment").value.trim();
+    await updateDoc(doc(db, "cad_units", cadUnitId), { assignment, updatedAt: serverTimestamp() });
+  };
+
+  window.cadLogIncident = async function() {
+    const type = document.getElementById("cad-inc-type").value;
+    const loc  = document.getElementById("cad-inc-loc").value.trim();
+    const note = document.getElementById("cad-inc-note").value.trim();
+    if (!loc) { alert("Please enter a location."); return; }
+    await addDoc(collection(db, "cad_incidents"), {
+      type, location: loc, note,
+      createdBy: cadCallsign || "Dispatch",
+      createdAt: serverTimestamp()
+    });
+    document.getElementById("cad-inc-loc").value  = "";
+    document.getElementById("cad-inc-note").value = "";
+  };
+
+  window.cadClearIncident = async function(id) {
+    await deleteDoc(doc(db, "cad_incidents", id));
+  };
+
+  // Live unit feed
+  onSnapshot(query(collection(db,"cad_units"), orderBy("dept")), snap => {
+    const pd = [], fd = [], ems = [];
+    snap.forEach(d => {
+      const u = {id:d.id, ...d.data()};
+      if      (u.dept==="PD")  pd.push(u);
+      else if (u.dept==="FD")  fd.push(u);
+      else                      ems.push(u);
+    });
+    cadRenderUnits("cad-units-pd",  pd);
+    cadRenderUnits("cad-units-fd",  fd);
+    cadRenderUnits("cad-units-ems", ems);
+    document.getElementById("cad-count-pd").textContent  = pd.length;
+    document.getElementById("cad-count-fd").textContent  = fd.length;
+    document.getElementById("cad-count-ems").textContent = ems.length;
+  });
+
+  function cadRenderUnits(containerId, units) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    if (units.length === 0) { el.innerHTML = '<div class="cad-no-units">None on duty</div>'; return; }
+    el.innerHTML = units.map(u => {
+      const m = CAD_STATUS_META[u.status] || CAD_STATUS_META.AVAILABLE;
+      const isMe = u.id === cadUnitId;
+      return `<div class="cad-unit-row${isMe?" cad-my-row":""}">
+        <div class="cad-unit-left">
+          <span class="cad-unit-cs">${esc(u.callsign)}${isMe?` <span class="cad-you">YOU</span>`:""}</span>
+          ${u.role?`<span class="cad-unit-role">${esc(u.role)}</span>`:""}
+          ${u.assignment?`<span class="cad-unit-asgn">${esc(u.assignment)}</span>`:""}
+        </div>
+        <span class="cad-unit-badge" style="background:${m.bg};color:${m.color}">${m.label}</span>
+      </div>`;
+    }).join("");
+  }
+
+  // Live incident feed
+  onSnapshot(query(collection(db,"cad_incidents"), orderBy("createdAt","desc")), snap => {
+    const list = document.getElementById("cad-inc-list");
+    if (!list) return;
+    const count = snap.size;
+    document.getElementById("cad-count-inc").textContent = count;
+    document.getElementById("cad-count-inc").className   = "cad-count-pill" + (count > 0 ? " cad-pill-red" : "");
+    if (snap.empty) { list.innerHTML = '<div class="cad-no-units">No active incidents</div>'; return; }
+    list.innerHTML = snap.docs.map(d => {
+      const inc = d.data();
+      const m = INC_META[inc.type] || INC_META.OTHER;
+      return `<div class="cad-inc-row">
+        <div class="cad-inc-left">
+          <span class="cad-inc-badge" style="background:${m.color}18;color:${m.color};border:1px solid ${m.color}40">${m.label}</span>
+          <span class="cad-inc-loc">${esc(inc.location)}</span>
+          ${inc.note?`<span class="cad-inc-note">${esc(inc.note)}</span>`:""}
+          <span class="cad-inc-meta">by ${esc(inc.createdBy||"?")} · ${fmtTs(inc.createdAt)}</span>
+        </div>
+        <button class="cad-clear-btn" onclick="cadClearIncident('${d.id}')">Clear</button>
+      </div>`;
+    }).join("");
+  });
 
   // ── IMAGE VIEWER ──────────────────────────────────────────────
   window.openImgViewer = function(url) {
@@ -922,6 +1117,163 @@ input[type="file"] { display: none; }
   -webkit-tap-highlight-color: transparent;
 }
 
+/* ── CAD PAGE ── */
+#page-cad { background: #0f172a; min-height: 100vh; }
+.cad-page-wrap {
+  max-width: 1100px; margin: 0 auto; padding: 1.25rem;
+  display: grid; grid-template-columns: 320px 1fr; gap: 1.25rem; align-items: start;
+}
+@media (max-width: 700px) { .cad-page-wrap { grid-template-columns: 1fr; } }
+
+.cad-hero {
+  background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+  padding: 1.5rem 1.25rem 1.25rem; border-bottom: 2px solid #2563eb;
+}
+.cad-hero-inner { max-width: 1100px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .75rem; }
+.cad-hero-title { font-family: var(--serif); font-size: clamp(1.1rem,3vw,1.5rem); font-weight: 700; color: #fff; }
+.cad-hero-title span { color: #60a5fa; }
+.cad-hero-sub { font-size: .72rem; color: #64748b; letter-spacing: .1em; text-transform: uppercase; margin-top: .15rem; }
+.cad-hero-clock { font-family: var(--mono); color: #f59e0b; font-size: .82rem; font-weight: 600; text-align: right; }
+.cad-hero-date { font-size: .65rem; color: #475569; }
+
+/* Panels */
+.cad-panel { background: #1e293b; border: 1px solid #334155; border-radius: var(--r); overflow: hidden; margin-bottom: 1rem; }
+.cad-panel-head {
+  background: #0f172a; border-bottom: 1px solid #334155;
+  padding: .5rem .85rem; font-size: .65rem; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase; color: #64748b;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.cad-panel-body { padding: .75rem .85rem; }
+
+.cad-count-pill { background: #334155; color: #94a3b8; font-family: var(--mono); font-size: .6rem; padding: .05rem .35rem; border-radius: 10px; font-weight: 600; }
+.cad-pill-red   { background: #dc2626; color: #fff; }
+
+/* Sign-in panel */
+#cad-signin-panel .cad-signin-note { font-size: .75rem; color: #64748b; margin-bottom: .75rem; line-height: 1.5; }
+.cad-field { margin-bottom: .65rem; }
+.cad-field label { display: block; font-size: .65rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: #64748b; margin-bottom: .28rem; }
+.cad-field input, .cad-field select {
+  width: 100%; background: #0f172a; border: 1px solid #334155;
+  border-radius: var(--r); color: #f1f5f9; font-family: var(--sans);
+  font-size: 1rem; padding: .5rem .7rem; outline: none; transition: border-color .18s;
+  -webkit-appearance: none; appearance: none;
+}
+.cad-field input:focus, .cad-field select:focus { border-color: #2563eb; }
+.cad-signin-btn {
+  width: 100%; padding: .6rem; background: #2563eb; color: #fff;
+  border: none; border-radius: var(--r); font-family: var(--sans);
+  font-size: .9rem; font-weight: 700; cursor: pointer; transition: background .15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.cad-signin-btn:hover { background: #1d4ed8; }
+
+/* My unit panel */
+#cad-my-panel { display: none; }
+.cad-my-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: .6rem; gap: .5rem; flex-wrap: wrap; }
+.cad-my-id { display: flex; align-items: center; gap: .5rem; }
+.cad-my-pip { width: 8px; height: 8px; border-radius: 50%; background: #2563eb; animation: cadpip 2s ease-in-out infinite; flex-shrink: 0; }
+@keyframes cadpip { 0%,100%{opacity:1} 50%{opacity:.25} }
+.cad-my-cs { font-family: var(--mono); font-size: .9rem; font-weight: 600; color: #f1f5f9; }
+.cad-my-dept-lbl { font-size: .62rem; color: #64748b; text-transform: uppercase; letter-spacing: .08em; }
+.cad-my-status-badge { font-size: .62rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: .18rem .5rem; border-radius: 20px; }
+.cad-off-btn {
+  font-size: .6rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+  background: none; border: 1px solid #334155; color: #64748b;
+  padding: .2rem .5rem; border-radius: 3px; cursor: pointer; transition: all .15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.cad-off-btn:hover { border-color: #dc2626; color: #dc2626; }
+
+.cad-status-btns { display: flex; flex-wrap: wrap; gap: .3rem; margin-bottom: .6rem; }
+.cad-status-btn {
+  font-size: .63rem; font-weight: 600; padding: .28rem .6rem; border-radius: 4px;
+  cursor: pointer; border: 1px solid #334155; background: #0f172a; color: #64748b;
+  transition: all .15s; white-space: nowrap; -webkit-tap-highlight-color: transparent;
+}
+.cad-status-btn:hover { color: #f1f5f9; border-color: #475569; }
+.cad-btn-active { background: #2563eb !important; border-color: #2563eb !important; color: #fff !important; }
+#cad-btn-AVAILABLE.cad-btn-active  { background: #16a34a !important; border-color: #16a34a !important; }
+#cad-btn-RESPONDING.cad-btn-active { background: #2563eb !important; border-color: #2563eb !important; }
+#cad-btn-ON_SCENE.cad-btn-active   { background: #7c3aed !important; border-color: #7c3aed !important; }
+#cad-btn-TRAFFIC.cad-btn-active    { background: #0891b2 !important; border-color: #0891b2 !important; }
+#cad-btn-BUSY.cad-btn-active       { background: #ca8a04 !important; border-color: #ca8a04 !important; }
+
+.cad-asgn-row { display: flex; gap: .35rem; }
+.cad-asgn-row input {
+  flex: 1; background: #0f172a; border: 1px solid #334155;
+  border-radius: var(--r); color: #f1f5f9; font-family: var(--sans);
+  font-size: .85rem; padding: .38rem .6rem; outline: none; transition: border-color .15s;
+}
+.cad-asgn-row input:focus { border-color: #2563eb; }
+.cad-asgn-row input::placeholder { color: #475569; }
+.cad-set-btn {
+  background: #334155; border: none; color: #f1f5f9;
+  border-radius: var(--r); padding: .38rem .65rem; font-size: .72rem; font-weight: 600;
+  cursor: pointer; transition: background .15s; white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+}
+.cad-set-btn:hover { background: #2563eb; }
+
+/* Unit rows */
+.cad-dept-lbl {
+  font-size: .6rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: #64748b; margin: .5rem 0 .25rem; padding-left: .25rem; border-left: 2px solid #334155;
+}
+.cad-dept-lbl.pd  { border-color: #2563eb; color: #93c5fd; }
+.cad-dept-lbl.fd  { border-color: #dc2626; color: #fca5a5; }
+.cad-dept-lbl.ems { border-color: #16a34a; color: #86efac; }
+
+.cad-unit-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: .3rem .5rem; border-radius: var(--r); gap: .5rem;
+  background: #0f172a; margin-bottom: .2rem;
+}
+.cad-my-row { border: 1px solid #2563eb; }
+.cad-unit-left { display: flex; flex-direction: column; gap: .08rem; min-width: 0; }
+.cad-unit-cs { font-family: var(--mono); font-size: .75rem; font-weight: 600; color: #f1f5f9; }
+.cad-you { font-size: .52rem; background: #2563eb; color: #fff; padding: .03rem .28rem; border-radius: 3px; vertical-align: middle; margin-left: .2rem; font-family: var(--sans); letter-spacing: .05em; }
+.cad-unit-role { font-size: .6rem; color: #2563eb; font-weight: 600; letter-spacing: .04em; }
+.cad-unit-asgn { font-size: .65rem; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
+.cad-unit-badge { font-size: .58rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: .15rem .4rem; border-radius: 10px; white-space: nowrap; flex-shrink: 0; }
+.cad-no-units { font-size: .7rem; color: #475569; padding: .3rem .25rem; font-style: italic; }
+
+/* Incident rows */
+.cad-inc-row {
+  background: #0f172a; border-radius: var(--r); padding: .4rem .55rem;
+  margin-bottom: .22rem; display: flex; align-items: flex-start; justify-content: space-between; gap: .5rem;
+}
+.cad-inc-left { display: flex; flex-direction: column; gap: .18rem; min-width: 0; flex: 1; }
+.cad-inc-badge { display: inline-block; font-size: .56rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; padding: .1rem .38rem; border-radius: 3px; width: fit-content; }
+.cad-inc-loc  { font-size: .76rem; font-weight: 600; color: #f1f5f9; }
+.cad-inc-note { font-size: .68rem; color: #64748b; }
+.cad-inc-meta { font-size: .6rem; color: #334155; font-family: var(--mono); }
+.cad-clear-btn {
+  font-size: .58rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+  background: none; border: 1px solid #334155; color: #64748b;
+  padding: .18rem .42rem; border-radius: 3px; cursor: pointer; flex-shrink: 0;
+  transition: all .15s; -webkit-tap-highlight-color: transparent;
+}
+.cad-clear-btn:hover { border-color: #16a34a; color: #16a34a; }
+
+/* Log incident form */
+.cad-log-form { display: flex; flex-direction: column; gap: .4rem; }
+.cad-log-form select, .cad-log-form input {
+  width: 100%; background: #0f172a; border: 1px solid #334155;
+  border-radius: var(--r); color: #f1f5f9; font-family: var(--sans);
+  font-size: .9rem; padding: .38rem .6rem; outline: none; transition: border-color .15s;
+  -webkit-appearance: none; appearance: none;
+}
+.cad-log-form select:focus, .cad-log-form input:focus { border-color: #2563eb; }
+.cad-log-form input::placeholder { color: #475569; }
+.cad-log-btn {
+  width: 100%; padding: .42rem; background: #2563eb; color: #fff;
+  border: none; border-radius: var(--r); font-family: var(--sans);
+  font-size: .82rem; font-weight: 700; cursor: pointer; transition: background .15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.cad-log-btn:hover { background: #1d4ed8; }
+
 /* ── MISC ── */
 .empty-state { text-align: center; padding: 2.5rem 1rem; color: var(--gray-3); font-size: .85rem; }
 .empty-icon-text { font-family: var(--mono); font-size: .78rem; margin-bottom: .5rem; letter-spacing: .1em; }
@@ -1001,6 +1353,7 @@ footer strong { color: #9ab0d0; }
     <button class="nav-tab"        id="tab-emer" onclick="showPage('emer')">Emergency</button>
     <button class="nav-tab"        id="tab-pd"   onclick="showPage('pd')">Police Dept</button>
     <button class="nav-tab"        id="tab-fd"   onclick="showPage('fd')">Fire Dept</button>
+    <button class="nav-tab"        id="tab-cad"  onclick="showPage('cad')">CAD</button>
   </div>
 </div>
 
@@ -1433,6 +1786,172 @@ footer strong { color: #9ab0d0; }
       </div>
       <hr class="modal-divider">
       <button id="fd-submit-btn" class="submit-btn" style="background:var(--fd-red);color:#fff;" onclick="submitFD()">Post to FD Board</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== CAD PAGE ======================== -->
+<div class="page" id="page-cad">
+  <div class="cad-hero">
+    <div class="cad-hero-inner">
+      <div>
+        <div class="cad-hero-title">Stilton County <span>CAD</span></div>
+        <div class="cad-hero-sub">Computer Aided Dispatch — Emergency Services</div>
+      </div>
+      <div style="text-align:right">
+        <div class="cad-hero-clock" id="cad-clock-disp"></div>
+        <div class="cad-hero-date"  id="cad-date-disp"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cad-page-wrap">
+
+    <!-- LEFT COLUMN: MY UNIT -->
+    <div>
+
+      <!-- Sign-in / My Unit -->
+      <div class="cad-panel">
+        <div class="cad-panel-head">My Unit</div>
+        <div class="cad-panel-body">
+
+          <!-- Signed out state -->
+          <div id="cad-signin-panel">
+            <p class="cad-signin-note">Sign in with the CAD PIN to go on duty and update your status.</p>
+            <button class="cad-signin-btn" onclick="openCadLogin()">Sign In to CAD</button>
+          </div>
+
+          <!-- Signed in state -->
+          <div id="cad-my-panel">
+            <div class="cad-my-top">
+              <div class="cad-my-id">
+                <span class="cad-my-pip"></span>
+                <div>
+                  <div class="cad-my-cs" id="cad-my-callsign">—</div>
+                  <div class="cad-my-dept-lbl" id="cad-my-dept">—</div>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;">
+                <span class="cad-my-status-badge" id="cad-my-status-badge" style="background:#dcfce7;color:#16a34a">Available</span>
+                <button class="cad-off-btn" onclick="cadGoOffDuty()">Off Duty</button>
+              </div>
+            </div>
+            <div class="cad-status-btns">
+              <button class="cad-status-btn cad-btn-active" id="cad-btn-AVAILABLE"  onclick="cadSetStatus('AVAILABLE')">Available</button>
+              <button class="cad-status-btn" id="cad-btn-RESPONDING" onclick="cadSetStatus('RESPONDING')">Responding</button>
+              <button class="cad-status-btn" id="cad-btn-ON_SCENE"   onclick="cadSetStatus('ON_SCENE')">On Scene</button>
+              <button class="cad-status-btn" id="cad-btn-TRAFFIC"    onclick="cadSetStatus('TRAFFIC')">Traffic Stop</button>
+              <button class="cad-status-btn" id="cad-btn-BUSY"       onclick="cadSetStatus('BUSY')">Busy</button>
+            </div>
+            <div class="cad-asgn-row">
+              <input type="text" id="cad-my-assignment" placeholder="Current assignment / location…" autocomplete="off">
+              <button class="cad-set-btn" onclick="cadUpdateAssignment()">Set</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Log Incident -->
+      <div class="cad-panel">
+        <div class="cad-panel-head">Log Incident</div>
+        <div class="cad-panel-body">
+          <div class="cad-log-form">
+            <select id="cad-inc-type">
+              <option value="PURSUIT">Pursuit</option>
+              <option value="FIGHT">Fight / Assault</option>
+              <option value="FIRE">Structure Fire</option>
+              <option value="ACCIDENT">Accident</option>
+              <option value="TRAFFIC">Traffic Stop</option>
+              <option value="MEDICAL">Medical</option>
+              <option value="DISTURBANCE">Disturbance</option>
+              <option value="OTHER">Other</option>
+            </select>
+            <input type="text" id="cad-inc-loc"  placeholder="Location (e.g. Route 9 near Main St)" autocomplete="off">
+            <input type="text" id="cad-inc-note" placeholder="Additional notes (optional)" autocomplete="off">
+            <button class="cad-log-btn" onclick="cadLogIncident()">Log Incident</button>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- end left col -->
+
+    <!-- RIGHT COLUMN: LIVE FEEDS -->
+    <div>
+
+      <!-- Active Incidents -->
+      <div class="cad-panel">
+        <div class="cad-panel-head">
+          Active Incidents
+          <span class="cad-count-pill" id="cad-count-inc">0</span>
+        </div>
+        <div class="cad-panel-body">
+          <div id="cad-inc-list"><div class="cad-no-units">No active incidents</div></div>
+        </div>
+      </div>
+
+      <!-- All Units -->
+      <div class="cad-panel">
+        <div class="cad-panel-head">Units On Duty</div>
+        <div class="cad-panel-body">
+          <div class="cad-dept-lbl pd">Police <span class="cad-count-pill" id="cad-count-pd">0</span></div>
+          <div id="cad-units-pd"></div>
+          <div class="cad-dept-lbl fd" style="margin-top:.5rem">Fire <span class="cad-count-pill" id="cad-count-fd">0</span></div>
+          <div id="cad-units-fd"></div>
+          <div class="cad-dept-lbl ems" style="margin-top:.5rem">EMS <span class="cad-count-pill" id="cad-count-ems">0</span></div>
+          <div id="cad-units-ems"></div>
+        </div>
+      </div>
+
+    </div><!-- end right col -->
+  </div><!-- end cad-page-wrap -->
+</div><!-- end page-cad -->
+
+<!-- ======================== CAD LOGIN OVERLAY ======================== -->
+<div class="overlay" id="cad-login-overlay">
+  <div class="modal">
+    <div class="modal-head" style="background:#1e3a8a;">
+      <div class="modal-head-text">
+        <h2>Sign In to CAD</h2>
+        <p style="color:#93c5fd;">Stilton County Computer Aided Dispatch</p>
+      </div>
+      <button class="modal-close" onclick="closeOverlay('cad-login-overlay')">&#x2715;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>CAD Access Password</label>
+        <input type="password" id="cad-login-pin" placeholder="Enter password" maxlength="30"
+               autocomplete="current-password"
+               onkeydown="if(event.key==='Enter')cadSignIn()">
+        <div class="pin-err" id="cad-login-pin-err" style="display:none;">&#x26A0; Incorrect password. Try again.</div>
+      </div>
+      <div class="form-group">
+        <label>Department</label>
+        <select id="cad-login-dept" onchange="cadUpdateRoles()">
+          <option value="PD">Police Department</option>
+          <option value="FD">Fire Department</option>
+          <option value="EMS">EMS</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Role / Rank</label>
+        <select id="cad-login-role">
+          <option value="Patrol Officer">Patrol Officer</option>
+          <option value="Senior Officer">Senior Officer</option>
+          <option value="Corporal">Corporal</option>
+          <option value="Sergeant">Sergeant</option>
+          <option value="Lieutenant">Lieutenant</option>
+          <option value="Captain">Captain</option>
+          <option value="Deputy Chief">Deputy Chief</option>
+          <option value="Chief of Police">Chief of Police</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Callsign / Unit #</label>
+        <input type="text" id="cad-login-callsign" placeholder="e.g. UNIT-1, PD-4" autocomplete="off" autocapitalize="characters"
+               onkeydown="if(event.key==='Enter')cadSignIn()">
+      </div>
+      <hr class="modal-divider">
+      <button class="submit-btn" style="background:#1d4ed8;color:#fff;" onclick="cadSignIn()">Go On Duty</button>
     </div>
   </div>
 </div>
