@@ -633,6 +633,145 @@
     }).join("");
   });
 
+
+  // ── PANIC BUTTON ─────────────────────────────────────────────
+  window.cadPanic = async function() {
+    if (!cadSignedIn || !cadUnitId) {
+      alert("You must be signed in to CAD to use the panic button.");
+      return;
+    }
+    const assignment = document.getElementById("cad-my-assignment").value.trim() || "Unknown location";
+    await addDoc(collection(db, "cad_panic"), {
+      callsign:   cadCallsign,
+      dept:       cadDept,
+      role:       document.getElementById("cad-my-dept")?.textContent || "",
+      assignment,
+      createdAt:  serverTimestamp()
+    });
+    // Also send a chat message
+    await addDoc(collection(db, "cad_chat"), {
+      callsign: "DISPATCH",
+      dept:     "SYS",
+      msg:      "🚨 PANIC — OFFICER NEEDS ASSISTANCE — " + cadCallsign + " — Last known: " + assignment,
+      panic:    true,
+      createdAt: serverTimestamp()
+    });
+  };
+
+  // Panic feed — alert all signed-in users with sound
+  let knownPanicIds = null;
+  onSnapshot(query(collection(db,"cad_panic"), orderBy("createdAt","desc")), snap => {
+    const list = document.getElementById("cad-panic-list");
+    if (!list) return;
+
+    // Play alarm for NEW panics (not on first load)
+    if (knownPanicIds !== null) {
+      snap.docs.forEach(d => {
+        if (!knownPanicIds.has(d.id)) playPanicAlarm();
+      });
+    }
+    knownPanicIds = new Set(snap.docs.map(d => d.id));
+
+    const hasPanic = !snap.empty;
+    document.getElementById("cad-panic-banner").style.display = hasPanic ? "flex" : "none";
+
+    if (!hasPanic) { list.innerHTML = ""; return; }
+    list.innerHTML = snap.docs.map(d => {
+      const p = d.data();
+      return `<div class="cad-panic-entry">
+        <div class="cad-panic-entry-left">
+          <span class="cad-panic-cs">${esc(p.callsign)}</span>
+          <span class="cad-panic-loc">${esc(p.assignment)}</span>
+          <span class="cad-inc-meta">${fmtTs(p.createdAt)}</span>
+        </div>
+        <button class="cad-clear-btn" style="border-color:#dc2626;color:#dc2626" onclick="cadResolvePanic('${d.id}')">Resolve</button>
+      </div>`;
+    }).join("");
+  });
+
+  window.cadResolvePanic = async function(id) {
+    await deleteDoc(doc(db, "cad_panic", id));
+  };
+
+  // Web Audio panic alarm — no external files needed
+  function playPanicAlarm() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const times = [0, 0.45, 0.9];
+      times.forEach(t => {
+        // High tone
+        const o1 = ctx.createOscillator();
+        const g1 = ctx.createGain();
+        o1.connect(g1); g1.connect(ctx.destination);
+        o1.type = "square";
+        o1.frequency.setValueAtTime(960, ctx.currentTime + t);
+        g1.gain.setValueAtTime(0.18, ctx.currentTime + t);
+        g1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.38);
+        o1.start(ctx.currentTime + t);
+        o1.stop(ctx.currentTime + t + 0.38);
+        // Low tone follows
+        const o2 = ctx.createOscillator();
+        const g2 = ctx.createGain();
+        o2.connect(g2); g2.connect(ctx.destination);
+        o2.type = "square";
+        o2.frequency.setValueAtTime(720, ctx.currentTime + t + 0.2);
+        g2.gain.setValueAtTime(0.14, ctx.currentTime + t + 0.2);
+        g2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.42);
+        o2.start(ctx.currentTime + t + 0.2);
+        o2.stop(ctx.currentTime + t + 0.42);
+      });
+      // Close context after alarm finishes
+      setTimeout(() => ctx.close(), 2000);
+    } catch(e) { console.warn("Audio error:", e); }
+  }
+
+  // ── CAD CHAT ─────────────────────────────────────────────────
+  const CAD_CHAT_MAX = 20;
+
+  window.cadSendChat = async function() {
+    if (!cadSignedIn) { alert("Sign in to CAD first."); return; }
+    const input = document.getElementById("cad-chat-input");
+    const msg = input.value.trim();
+    if (!msg) return;
+    input.value = "";
+    await addDoc(collection(db, "cad_chat"), {
+      callsign: cadCallsign,
+      dept:     cadDept,
+      msg,
+      panic:    false,
+      createdAt: serverTimestamp()
+    });
+  };
+
+  onSnapshot(query(collection(db,"cad_chat"), orderBy("createdAt","desc")), snap => {
+    const feed = document.getElementById("cad-chat-feed");
+    if (!feed) return;
+    const docs = snap.docs.slice(0, CAD_CHAT_MAX).reverse();
+    if (docs.length === 0) {
+      feed.innerHTML = '<div class="cad-chat-empty">No messages yet</div>';
+      return;
+    }
+    const bottom = feed.scrollHeight - feed.scrollTop === feed.clientHeight;
+    feed.innerHTML = docs.map(d => {
+      const m = d.data();
+      const deptColor = m.dept === "PD" ? "#93c5fd" : m.dept === "FD" ? "#fca5a5" : m.dept === "EMS" ? "#86efac" : "#f59e0b";
+      if (m.panic) {
+        return `<div class="cad-chat-msg cad-chat-panic">
+          <span class="cad-chat-panic-label">PANIC ALERT</span>
+          <span class="cad-chat-text">${esc(m.msg.replace("🚨 PANIC — OFFICER NEEDS ASSISTANCE — ",""))}</span>
+          <span class="cad-chat-time">${fmtTs(m.createdAt)}</span>
+        </div>`;
+      }
+      return `<div class="cad-chat-msg">
+        <span class="cad-chat-cs" style="color:${deptColor}">${esc(m.callsign)}</span>
+        <span class="cad-chat-text">${esc(m.msg)}</span>
+        <span class="cad-chat-time">${fmtTs(m.createdAt)}</span>
+      </div>`;
+    }).join("");
+    // Auto-scroll to bottom if was at bottom
+    feed.scrollTop = feed.scrollHeight;
+  });
+
   // ── IMAGE VIEWER ──────────────────────────────────────────────
   window.openImgViewer = function(url) {
     document.getElementById("img-viewer-img").src = url;
@@ -1274,6 +1413,84 @@ input[type="file"] { display: none; }
 }
 .cad-log-btn:hover { background: #1d4ed8; }
 
+/* ── PANIC BUTTON ── */
+.cad-panic-btn {
+  width: 100%; padding: .85rem; border: none; border-radius: var(--r);
+  background: #dc2626; color: #fff; font-family: var(--sans);
+  font-size: 1rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+  cursor: pointer; transition: background .15s, transform .1s, box-shadow .15s;
+  box-shadow: 0 0 0 0 rgba(220,38,38,0);
+  animation: panicPulse 2s ease-in-out infinite;
+  -webkit-tap-highlight-color: transparent;
+}
+.cad-panic-btn:hover  { background: #b91c1c; transform: scale(1.02); }
+.cad-panic-btn:active { transform: scale(.98); }
+@keyframes panicPulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(220,38,38,.5); }
+  50%      { box-shadow: 0 0 0 10px rgba(220,38,38,0); }
+}
+
+/* Panic banner */
+.cad-panic-banner {
+  display: none; align-items: center; gap: .75rem;
+  background: #7f1d1d; border: 2px solid #dc2626;
+  border-radius: var(--r); padding: .6rem .85rem; margin-bottom: .75rem;
+  animation: panicFlash 1s ease-in-out infinite;
+}
+@keyframes panicFlash { 0%,100%{border-color:#dc2626} 50%{border-color:#fca5a5} }
+.cad-panic-banner-label {
+  font-size: .72rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+  color: #fca5a5; white-space: nowrap;
+}
+.cad-panic-entry {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: .5rem;
+  background: #450a0a; border-radius: var(--r); padding: .38rem .55rem; margin-bottom: .2rem;
+}
+.cad-panic-entry-left { display: flex; flex-direction: column; gap: .1rem; }
+.cad-panic-cs  { font-family: var(--mono); font-size: .78rem; font-weight: 700; color: #fca5a5; }
+.cad-panic-loc { font-size: .7rem; color: #ef4444; }
+
+/* ── CAD CHAT ── */
+.cad-chat-feed {
+  background: #0f172a; border-radius: var(--r); border: 1px solid #334155;
+  height: 180px; overflow-y: auto; padding: .5rem .6rem;
+  display: flex; flex-direction: column; gap: .3rem;
+  scroll-behavior: smooth;
+}
+.cad-chat-feed::-webkit-scrollbar { width: 3px; }
+.cad-chat-feed::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
+.cad-chat-msg {
+  display: flex; align-items: baseline; gap: .4rem; flex-wrap: wrap;
+  font-size: .72rem; line-height: 1.4;
+}
+.cad-chat-panic {
+  background: #450a0a; border-radius: 3px; padding: .25rem .4rem;
+  border-left: 2px solid #dc2626;
+}
+.cad-chat-panic-label {
+  font-size: .6rem; font-weight: 800; letter-spacing: .08em;
+  color: #dc2626; white-space: nowrap;
+}
+.cad-chat-cs   { font-family: var(--mono); font-size: .68rem; font-weight: 700; white-space: nowrap; flex-shrink: 0; }
+.cad-chat-text { color: #e2e8f0; flex: 1; word-break: break-word; }
+.cad-chat-time { font-family: var(--mono); font-size: .58rem; color: #334155; white-space: nowrap; margin-left: auto; }
+.cad-chat-empty { font-size: .7rem; color: #475569; font-style: italic; text-align: center; padding: .5rem; }
+.cad-chat-row { display: flex; gap: .35rem; margin-top: .45rem; }
+.cad-chat-input {
+  flex: 1; background: #0f172a; border: 1px solid #334155;
+  border-radius: var(--r); color: #f1f5f9; font-family: var(--sans);
+  font-size: .85rem; padding: .38rem .6rem; outline: none; transition: border-color .15s;
+}
+.cad-chat-input:focus { border-color: #2563eb; }
+.cad-chat-input::placeholder { color: #475569; }
+.cad-chat-send {
+  background: #334155; border: none; color: #f1f5f9; border-radius: var(--r);
+  padding: .38rem .7rem; font-size: .75rem; font-weight: 600; cursor: pointer;
+  transition: background .15s; white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+}
+.cad-chat-send:hover { background: #2563eb; }
+
 /* ── MISC ── */
 .empty-state { text-align: center; padding: 2.5rem 1rem; color: var(--gray-3); font-size: .85rem; }
 .empty-icon-text { font-family: var(--mono); font-size: .78rem; margin-bottom: .5rem; letter-spacing: .1em; }
@@ -1873,6 +2090,23 @@ footer strong { color: #9ab0d0; }
         </div>
       </div>
 
+
+      <!-- PANIC BUTTON -->
+      <div class="cad-panel" style="border-color:#dc262640;">
+        <div class="cad-panel-head" style="background:#450a0a;color:#fca5a5;">
+          Emergency — Panic Button
+        </div>
+        <div class="cad-panel-body">
+          <div class="cad-panic-banner" id="cad-panic-banner">
+            <span class="cad-panic-banner-label">OFFICER NEEDS ASSISTANCE</span>
+          </div>
+          <div id="cad-panic-list"></div>
+          <button class="cad-panic-btn" onclick="cadPanic()">
+            &#x26A0; OFFICER NEEDS ASSISTANCE
+          </button>
+        </div>
+      </div>
+
     </div><!-- end left col -->
 
     <!-- RIGHT COLUMN: LIVE FEEDS -->
@@ -1886,6 +2120,23 @@ footer strong { color: #9ab0d0; }
         </div>
         <div class="cad-panel-body">
           <div id="cad-inc-list"><div class="cad-no-units">No active incidents</div></div>
+        </div>
+      </div>
+
+
+      <!-- CAD Chat -->
+      <div class="cad-panel">
+        <div class="cad-panel-head">CAD Chat / Dispatch Notes</div>
+        <div class="cad-panel-body">
+          <div class="cad-chat-feed" id="cad-chat-feed">
+            <div class="cad-chat-empty">No messages yet</div>
+          </div>
+          <div class="cad-chat-row">
+            <input type="text" class="cad-chat-input" id="cad-chat-input"
+              placeholder="Send a message to all units…" maxlength="200" autocomplete="off"
+              onkeydown="if(event.key==='Enter')cadSendChat()">
+            <button class="cad-chat-send" onclick="cadSendChat()">Send</button>
+          </div>
         </div>
       </div>
 
