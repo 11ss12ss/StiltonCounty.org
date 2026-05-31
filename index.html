@@ -96,12 +96,13 @@
 
   async function sendDiscord(payload) {
     try {
-      await fetch("https://corsproxy.io/?" + encodeURIComponent(DISCORD_WEBHOOK), {
+      fetch(DISCORD_WEBHOOK, {
         method: "POST",
+        mode: "no-cors",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
-    } catch(e) { console.warn("Discord send error:", e); }
+    } catch(e) {}
   }
 
   function nowStr() {
