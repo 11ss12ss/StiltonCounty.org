@@ -109,14 +109,21 @@
   }
 
   // ── UNIT ON DUTY ─────────────────────────────────────────────
+  // Shared dept helpers used across all discord functions
+  const DEPT_LABELS = { PD:"Police Department", FD:"Fire Department", EMS:"EMS", DOT:"Dept of Transportation" };
+  const DEPT_EMOJIS = { PD:"🚔", FD:"🚒", EMS:"🚑", DOT:"🚧" };
+
   function discordOnDuty(callsign, dept, role) {
+    const deptEmoji  = DEPT_EMOJIS[dept] || "🔵";
+    const deptLabel  = DEPT_LABELS[dept] || dept || "Unknown";
     sendDiscord({ embeds: [{
-      title: "🚔 Unit On Duty",
+      title: deptEmoji + " Unit On Duty — " + deptLabel,
       color: DEPT_COLORS[dept] || 0x334155,
       fields: [
-        { name: "Callsign", value: callsign, inline: true },
-        { name: "Department", value: dept === "PD" ? "Police Department" : dept === "FD" ? "Fire Department" : dept === "EMS" ? "EMS" : "Dept of Transportation", inline: true },
-        { name: "Role", value: role || "—", inline: true },
+        { name: "Callsign",   value: callsign,  inline: true },
+        { name: "Department", value: deptLabel, inline: true },
+        { name: "Role",       value: role || "—", inline: true },
+        { name: "Status",     value: "🟢 Available", inline: true },
       ],
       footer: { text: "Stilton County CAD • " + nowStr() },
       timestamp: new Date().toISOString()
@@ -125,13 +132,15 @@
 
   // ── UNIT OFF DUTY ────────────────────────────────────────────
   function discordOffDuty(callsign, dept, role) {
+    const deptEmoji = DEPT_EMOJIS[dept] || "🔵";
+    const deptLabel = DEPT_LABELS[dept] || dept || "Unknown";
     sendDiscord({ embeds: [{
-      title: "⬛ Unit Off Duty",
+      title: deptEmoji + " Unit Off Duty — " + deptLabel,
       color: 0x475569,
       fields: [
-        { name: "Callsign", value: callsign, inline: true },
-        { name: "Department", value: dept || "—", inline: true },
-        { name: "Role", value: role || "—", inline: true },
+        { name: "Callsign",   value: callsign,  inline: true },
+        { name: "Department", value: deptLabel, inline: true },
+        { name: "Role",       value: role || "—", inline: true },
       ],
       footer: { text: "Stilton County CAD • " + nowStr() },
       timestamp: new Date().toISOString()
@@ -140,20 +149,22 @@
 
   // ── STATUS CHANGE ────────────────────────────────────────────
   function discordStatusChange(callsign, dept, role, status, assignment) {
-    const emoji = STATUS_EMOJI[status] || "⚪";
-    const labels = {
+    const statusEmoji = STATUS_EMOJI[status] || "⚪";
+    const deptEmoji   = DEPT_EMOJIS[dept]    || "🔵";
+    const deptLabel   = DEPT_LABELS[dept]    || dept || "Unknown";
+    const statusLabels = {
       AVAILABLE:"Available", BUSY:"Busy", RESPONDING:"Responding",
       ON_SCENE:"On Scene", TRAFFIC:"Traffic Stop"
     };
     const fields = [
-      { name: "Callsign", value: callsign, inline: true },
-      { name: "Department", value: dept || "—", inline: true },
-      { name: "Role", value: role || "—", inline: true },
-      { name: "New Status", value: emoji + " " + (labels[status] || status), inline: true },
+      { name: "Callsign",   value: callsign,  inline: true },
+      { name: "Department", value: deptLabel, inline: true },
+      { name: "Role",       value: role || "—", inline: true },
+      { name: "New Status", value: statusEmoji + " " + (statusLabels[status] || status), inline: true },
     ];
-    if (assignment) fields.push({ name: "Assignment", value: assignment, inline: true });
+    if (assignment) fields.push({ name: "Assignment / Location", value: assignment, inline: false });
     sendDiscord({ embeds: [{
-      title: emoji + " Unit Status Update",
+      title: deptEmoji + " " + deptLabel + " — Status Update",
       color: STATUS_COLORS[status] || 0x334155,
       fields,
       footer: { text: "Stilton County CAD • " + nowStr() },
@@ -581,6 +592,22 @@
       const data = { type, title, body, author, createdAt: serverTimestamp() };
       if (imageUrl) data.imageUrl = imageUrl;
       await addDoc(collection(db,"pd_posts"), data);
+      const PD_TYPE_LABELS = { GENERAL:"General Notice", BOLO:"BOLO", POLICY:"Policy Update", ARREST:"Arrest Report" };
+      const PD_TYPE_EMOJIS = { GENERAL:"📋", BOLO:"🔍", POLICY:"📜", ARREST:"⚖️" };
+      const embedFields = [
+        { name: "Type",   value: (PD_TYPE_EMOJIS[type]||"📋") + " " + (PD_TYPE_LABELS[type]||type), inline: true },
+        { name: "Posted By", value: author, inline: true },
+        { name: "Details",   value: body,   inline: false },
+      ];
+      const discordPayload = { embeds: [{
+        title: (PD_TYPE_EMOJIS[type]||"📋") + " PD Board — " + title,
+        color: 0x1d4ed8,
+        fields: embedFields,
+        footer: { text: "Stilton County Police Department • " + nowStr() },
+        timestamp: new Date().toISOString()
+      }]};
+      if (imageUrl) discordPayload.embeds[0].image = { url: imageUrl };
+      sendDiscord(discordPayload);
       closeOverlay("pd-overlay");
       clearFields(["pd-title","pd-body","pd-author"]);
       document.getElementById("pd-img").value = "";
@@ -641,6 +668,22 @@
       const data = { type, title, body, author, createdAt: serverTimestamp() };
       if (imageUrl) data.imageUrl = imageUrl;
       await addDoc(collection(db,"fd_posts"), data);
+      const FD_TYPE_LABELS = { GENERAL:"General Notice", ALERT:"Fire Alert", DRILL:"Drill Notice", UPDATE:"Dept Update" };
+      const FD_TYPE_EMOJIS = { GENERAL:"📋", ALERT:"🔥", DRILL:"🪖", UPDATE:"📢" };
+      const fdEmbedFields = [
+        { name: "Type",      value: (FD_TYPE_EMOJIS[type]||"📋") + " " + (FD_TYPE_LABELS[type]||type), inline: true },
+        { name: "Posted By", value: author, inline: true },
+        { name: "Details",   value: body,   inline: false },
+      ];
+      const fdPayload = { embeds: [{
+        title: (FD_TYPE_EMOJIS[type]||"📋") + " FD Board — " + title,
+        color: 0xdc2626,
+        fields: fdEmbedFields,
+        footer: { text: "Stilton County Fire Department • " + nowStr() },
+        timestamp: new Date().toISOString()
+      }]};
+      if (imageUrl) fdPayload.embeds[0].image = { url: imageUrl };
+      sendDiscord(fdPayload);
       closeOverlay("fd-overlay");
       clearFields(["fd-title","fd-body","fd-author"]);
       document.getElementById("fd-img").value = "";
@@ -691,6 +734,19 @@
     if (!title || !body) { alert("Please fill in the title and body."); return; }
     try {
       await addDoc(collection(db,"dot_posts"), { type, title, body, author, createdAt: serverTimestamp() });
+      const DOT_TYPE_LABELS = { GENERAL:"General Notice", CLOSURE:"Road Closure", WORK:"Road Works", HAZARD:"Hazard Warning", UPDATE:"Dept Update" };
+      const DOT_TYPE_EMOJIS = { GENERAL:"📋", CLOSURE:"🚧", WORK:"🔨", HAZARD:"⚠️", UPDATE:"📢" };
+      sendDiscord({ embeds: [{
+        title: (DOT_TYPE_EMOJIS[type]||"📋") + " DOT Board — " + title,
+        color: 0xea580c,
+        fields: [
+          { name: "Type",      value: (DOT_TYPE_EMOJIS[type]||"📋") + " " + (DOT_TYPE_LABELS[type]||type), inline: true },
+          { name: "Posted By", value: author, inline: true },
+          { name: "Details",   value: body,   inline: false },
+        ],
+        footer: { text: "Stilton County Dept of Transportation • " + nowStr() },
+        timestamp: new Date().toISOString()
+      }]});
       closeOverlay("dot-overlay");
       clearFields(["dot-title","dot-body","dot-author"]);
     } catch(err) { alert("Error saving DOT post: " + err.message); }
@@ -726,6 +782,17 @@
     document.getElementById("cad-become-disp-btn").style.display = "none";
     document.getElementById("cad-leave-disp-btn").style.display  = "inline-flex";
     setEASFormLocked(false);
+    sendDiscord({ embeds: [{
+      title: "🎙️ Dispatcher Online",
+      color: 0x16a34a,
+      description: "**" + cadCallsign + "** is now active as dispatcher.",
+      fields: [
+        { name: "Callsign",   value: cadCallsign, inline: true },
+        { name: "Department", value: cadDept,     inline: true },
+      ],
+      footer: { text: "Stilton County CAD • " + nowStr() },
+      timestamp: new Date().toISOString()
+    }]});
   };
 
   window.cadLeaveDispatch = async function() {
@@ -735,6 +802,13 @@
     document.getElementById("cad-become-disp-btn").style.display = "inline-flex";
     document.getElementById("cad-leave-disp-btn").style.display  = "none";
     setEASFormLocked(true);
+    sendDiscord({ embeds: [{
+      title: "🎙️ Dispatcher Offline",
+      color: 0x475569,
+      description: "**" + (cadCallsign||"Dispatcher") + "** has gone offline. Units are now self-dispatching.",
+      footer: { text: "Stilton County CAD • " + nowStr() },
+      timestamp: new Date().toISOString()
+    }]});
   };
 
   function setEASFormLocked(locked) {
@@ -774,6 +848,7 @@
     };
 
     await setDoc(doc(db, "eas_active", "current"), data);
+    discordEAS(type, area || "Stilton County", msg, cadCallsign || "Dispatch");
 
     document.getElementById("eas-msg").value    = "";
     document.getElementById("eas-area").value   = "";
@@ -787,6 +862,13 @@
       return;
     }
     await deleteDoc(doc(db, "eas_active", "current"));
+    sendDiscord({ embeds: [{
+      title: "✅ EAS Alert Cleared",
+      color: 0x16a34a,
+      description: "The active EAS broadcast has been cleared by **" + (cadCallsign || "Dispatch") + "**.",
+      footer: { text: "Stilton County Emergency Alert System • " + nowStr() },
+      timestamp: new Date().toISOString()
+    }]});
   };
 
   // Live EAS display
@@ -1114,11 +1196,45 @@
       createdBy: cadCallsign || "Dispatch",
       createdAt: serverTimestamp()
     });
+    const INC_EMOJIS = { PURSUIT:"🚗", FIGHT:"👊", FIRE:"🔥", ACCIDENT:"💥", TRAFFIC:"🚦", MEDICAL:"🚑", DISTURBANCE:"📢", OTHER:"📋" };
+    const INC_LABELS = { PURSUIT:"Pursuit", FIGHT:"Fight/Assault", FIRE:"Structure Fire", ACCIDENT:"Accident", TRAFFIC:"Traffic Stop", MEDICAL:"Medical", DISTURBANCE:"Disturbance", OTHER:"Other" };
+    const INC_COLS   = { PURSUIT:0xdc2626, FIGHT:0xea580c, FIRE:0xd97706, ACCIDENT:0x0284c7, TRAFFIC:0x0891b2, MEDICAL:0x16a34a, DISTURBANCE:0x7c3aed, OTHER:0x475569 };
+    const fields = [
+      { name: "Type",     value: (INC_EMOJIS[type]||"📋") + " " + (INC_LABELS[type]||type), inline: true },
+      { name: "Location", value: loc,                        inline: true },
+      { name: "Logged By",value: cadCallsign || "Dispatch",  inline: true },
+    ];
+    if (note) fields.push({ name: "Notes", value: note, inline: false });
+    sendDiscord({ embeds: [{
+      title: (INC_EMOJIS[type]||"📋") + " Incident Logged — " + (INC_LABELS[type]||type),
+      color: INC_COLS[type] || 0x475569,
+      fields,
+      footer: { text: "Stilton County CAD • " + nowStr() },
+      timestamp: new Date().toISOString()
+    }]});
     document.getElementById("cad-inc-loc").value  = "";
     document.getElementById("cad-inc-note").value = "";
   };
 
   window.cadClearIncident = async function(id) {
+    // Grab data before deleting so we can log it
+    const { getDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+    try {
+      const snap = await getDoc(doc(db, "cad_incidents", id));
+      if (snap.exists()) {
+        const d = snap.data();
+        sendDiscord({ embeds: [{
+          title: "✅ Incident Cleared — " + (d.type || ""),
+          color: 0x16a34a,
+          fields: [
+            { name: "Location",   value: d.location || "—",              inline: true },
+            { name: "Cleared By", value: cadCallsign || "Dispatch",       inline: true },
+          ],
+          footer: { text: "Stilton County CAD • " + nowStr() },
+          timestamp: new Date().toISOString()
+        }]});
+      }
+    } catch(e) {}
     await deleteDoc(doc(db, "cad_incidents", id));
   };
 
@@ -1242,6 +1358,26 @@
   });
 
   window.cadResolvePanic = async function(id) {
+    const { getDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+    try {
+      const snap = await getDoc(doc(db, "cad_panic", id));
+      if (snap.exists()) {
+        const p = snap.data();
+        sendDiscord({ embeds: [{
+          title: "✅ Panic Resolved — " + (p.callsign || ""),
+          color: 0x16a34a,
+          description: "Panic alert for **" + (p.callsign||"") + "** has been resolved by **" + (cadCallsign||"Dispatch") + "**.",
+          fields: [
+            { name: "Unit",          value: p.callsign    || "—", inline: true },
+            { name: "Department",    value: p.dept        || "—", inline: true },
+            { name: "Last Location", value: p.assignment  || "—", inline: true },
+            { name: "Resolved By",   value: cadCallsign   || "Dispatch", inline: true },
+          ],
+          footer: { text: "Stilton County CAD • " + nowStr() },
+          timestamp: new Date().toISOString()
+        }]});
+      }
+    } catch(e) {}
     await deleteDoc(doc(db, "cad_panic", id));
   };
 
@@ -1293,6 +1429,19 @@
       panic:    false,
       createdAt: serverTimestamp()
     });
+    const deptLabel = cadDept === "PD" ? "Police" : cadDept === "FD" ? "Fire" : cadDept === "EMS" ? "EMS" : cadDept === "DOT" ? "DOT" : cadDept;
+    sendDiscord({ embeds: [{
+      title: "💬 CAD Dispatch Note",
+      color: DEPT_COLORS[cadDept] || 0x334155,
+      description: msg,
+      fields: [
+        { name: "From",       value: cadCallsign || "—", inline: true },
+        { name: "Department", value: deptLabel   || "—", inline: true },
+        { name: "Role",       value: window._cadRole || "—", inline: true },
+      ],
+      footer: { text: "Stilton County CAD Chat • " + nowStr() },
+      timestamp: new Date().toISOString()
+    }]});
   };
 
   onSnapshot(query(collection(db,"cad_chat"), orderBy("createdAt","desc")), snap => {
