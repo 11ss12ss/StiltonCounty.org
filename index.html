@@ -681,18 +681,28 @@
       setTimeout(() => {
         if (!window.speechSynthesis) return;
         window.speechSynthesis.cancel();
-        const utt = new SpeechSynthesisUtterance(speechText);
-        utt.rate   = 0.78;   // slower = more robotic/authoritative
-        utt.pitch  = 0.6;    // lower pitch
-        utt.volume = 1.0;
-        // Try to pick a male/robotic voice if available
+
+        function speak() {
+          const utt = new SpeechSynthesisUtterance(speechText);
+          utt.rate   = 0.78;
+          utt.pitch  = 0.6;
+          utt.volume = 1.0;
+          const voices = window.speechSynthesis.getVoices();
+          const preferred = voices.find(v =>
+            /david|mark|fred|microsoft david|google uk english male|daniel/i.test(v.name)
+          ) || voices.find(v => v.lang === "en-US" && !v.name.toLowerCase().includes("female"))
+            || voices[0];
+          if (preferred) utt.voice = preferred;
+          window.speechSynthesis.speak(utt);
+        }
+
+        // If voices already loaded, speak immediately; otherwise wait for them
         const voices = window.speechSynthesis.getVoices();
-        const preferred = voices.find(v =>
-          /david|mark|fred|microsoft david|google uk english male|daniel/i.test(v.name)
-        ) || voices.find(v => v.lang === "en-US" && !v.name.toLowerCase().includes("female"))
-          || voices[0];
-        if (preferred) utt.voice = preferred;
-        window.speechSynthesis.speak(utt);
+        if (voices.length > 0) {
+          speak();
+        } else {
+          window.speechSynthesis.onvoiceschanged = () => { speak(); window.speechSynthesis.onvoiceschanged = null; };
+        }
       }, (toneStart + toneDur + 1.0) * 1000);
 
     } catch(e) { console.warn("EAS audio error:", e); }
@@ -700,13 +710,22 @@
 
   // ── GLOBAL EAS LISTENER — fires on every open tab ─────────────
   let easWasActive = false;
+  let easLastId    = null;   // track by Firestore update time to detect genuinely NEW alerts
+
+  // Pre-load voices as early as possible so they're ready when needed
+  if (window.speechSynthesis) {
+    window.speechSynthesis.getVoices();
+    window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+  }
+
   onSnapshot(doc(db, "eas_active", "current"), snap => {
-    const banner = document.getElementById("eas-global-banner");
-    const bannerMsg = document.getElementById("eas-global-msg");
+    const banner     = document.getElementById("eas-global-banner");
+    const bannerMsg  = document.getElementById("eas-global-msg");
     const bannerType = document.getElementById("eas-global-type");
 
     if (!snap.exists()) {
       easWasActive = false;
+      easLastId    = null;
       if (banner) banner.style.display = "none";
       return;
     }
@@ -725,11 +744,14 @@
       if (bannerMsg)  bannerMsg.textContent  = d.message + (d.area ? " — " + d.area : "");
     }
 
-    // Play sound only when alert first appears (not on re-renders)
-    if (!easWasActive) {
+    // Use issuedAt timestamp as a unique ID to detect genuinely new broadcasts.
+    // This ensures everyone hears it, not just the broadcaster.
+    const thisId = d.issuedAt ? JSON.stringify(d.issuedAt) : d.message;
+    if (thisId !== easLastId) {
+      easLastId    = thisId;
+      easWasActive = true;
       playEASTone(d.type, d.area, d.message);
     }
-    easWasActive = true;
   });
 
 
