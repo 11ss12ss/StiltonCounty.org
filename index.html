@@ -94,16 +94,12 @@
     AVAILABLE: "🟢", BUSY: "🟡", RESPONDING: "🔵", ON_SCENE: "🟣", TRAFFIC: "🔵",
   };
 
-  // Send directly to Discord via a Cloudflare Worker proxy.
-  // This worker just forwards the request server-side, bypassing CORS entirely.
-  const DISCORD_PROXY = "https://discord-proxy.evanjc83.workers.dev/";
-
   async function sendDiscord(payload) {
     try {
-      await fetch(DISCORD_PROXY, {
+      await fetch("https://corsproxy.io/?" + encodeURIComponent(DISCORD_WEBHOOK), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ webhook: DISCORD_WEBHOOK, ...payload })
+        body: JSON.stringify(payload)
       });
     } catch(e) { console.warn("Discord send error:", e); }
   }
