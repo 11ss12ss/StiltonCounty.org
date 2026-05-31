@@ -32,6 +32,7 @@
   const PD_PIN    = "22334455";   // Police Department
   const FD_PIN    = "33445566";   // Fire Department
   const CAD_PIN   = "Emer";         // CAD system
+  const DOT_PIN   = "DOT2024";      // Dept of Transportation
   // ──────────────────────────────────────────────────────────────
 
   let pendingAction = null;
@@ -87,6 +88,7 @@
     // Determine department context
     const dept = (action === 'pd') ? 'pd'
                : (action === 'fd') ? 'fd'
+               : (action === 'dot') ? 'dot'
                : (action && action.dept) ? action.dept
                : null;
     if (dept === 'pd') {
@@ -95,6 +97,9 @@
     } else if (dept === 'fd') {
       head.className = "modal-head fd-head";
       subtitle.textContent = "Enter your Fire Department PIN";
+    } else if (dept === 'dot') {
+      head.className = "modal-head dot-head";
+      subtitle.textContent = "Enter your DOT access PIN";
     } else if (action && action.type === 'del') {
       head.className = "modal-head";
       subtitle.textContent = "Enter your staff PIN to remove this item";
@@ -111,6 +116,7 @@
     const action = pendingAction;
     const dept = (action === 'pd') ? 'pd'
                : (action === 'fd') ? 'fd'
+               : (action === 'dot') ? 'dot'
                : (action && action.dept) ? action.dept
                : null;
 
@@ -118,6 +124,7 @@
     let valid = false;
     if (dept === 'pd')       valid = (val === PD_PIN    || val === STAFF_PIN);
     else if (dept === 'fd')  valid = (val === FD_PIN    || val === STAFF_PIN);
+    else if (dept === 'dot') valid = (val === DOT_PIN   || val === STAFF_PIN);
     else if (action === 'cad') valid = (val === CAD_PIN || val === STAFF_PIN);
     else                     valid = (val === STAFF_PIN);
 
@@ -431,6 +438,175 @@
     finally { btn.disabled = false; btn.textContent = "Post to FD Board"; }
   };
 
+
+  // ── DOT POSTS ─────────────────────────────────────────────────
+  function dotTagClass(t)  { return {CLOSURE:"tag-dot-closure",WORK:"tag-dot-work",HAZARD:"tag-dot-hazard",UPDATE:"tag-dot-update"}[t]||"tag-dot-info"; }
+  function dotTypeLabel(t) { return {CLOSURE:"Road Closure",WORK:"Road Works",HAZARD:"Hazard Warning",UPDATE:"Dept Update"}[t]||"General"; }
+
+  function renderDOT(snap) {
+    const list = document.getElementById("dot-list");
+    if (!list) return;
+    list.innerHTML = "";
+    if (snap.empty) {
+      list.innerHTML = `<div class="empty-state"><div class="empty-icon-text">[ No DOT posts yet ]</div>No Department of Transportation posts have been published.</div>`;
+      return;
+    }
+    snap.forEach(docSnap => {
+      const d = docSnap.data(), id = docSnap.id;
+      list.insertAdjacentHTML("beforeend", `
+        <div class="dept-card dot-card" style="animation:pgIn .3s ease">
+          <div class="ann-top">
+            <span class="ann-tag ${dotTagClass(d.type)}">${dotTypeLabel(d.type)}</span>
+            <span class="ann-date">${fmtTs(d.createdAt)}</span>
+            <button class="del-btn" onclick="openPinModal({type:'del',col:'dot_posts',id:'${id}',dept:'dot'})">Remove</button>
+          </div>
+          <h3>${esc(d.title)}</h3>
+          <p>${esc(d.body)}</p>
+          <div class="ann-footer">
+            <span>POSTED BY: ${esc((d.author||"Stilton County DOT").toUpperCase())}</span>
+            <span>SCDOT OFFICIAL</span>
+          </div>
+        </div>`);
+    });
+  }
+  const dotQ = query(collection(db,"dot_posts"), orderBy("createdAt","desc"));
+  onSnapshot(dotQ, renderDOT);
+
+  window.submitDOT = async function() {
+    const type   = document.getElementById("dot-type").value;
+    const title  = document.getElementById("dot-title").value.trim();
+    const body   = document.getElementById("dot-body").value.trim();
+    const author = document.getElementById("dot-author").value.trim() || "Stilton County DOT";
+    if (!title || !body) { alert("Please fill in the title and body."); return; }
+    try {
+      await addDoc(collection(db,"dot_posts"), { type, title, body, author, createdAt: serverTimestamp() });
+      closeOverlay("dot-overlay");
+      clearFields(["dot-title","dot-body","dot-author"]);
+    } catch(err) { alert("Error saving DOT post: " + err.message); }
+  };
+
+  // ── DISPATCHER SYSTEM ─────────────────────────────────────────
+  // Track if any dispatcher is online
+  let dispatcherOnline = false;
+  let dispatcherId = null;
+
+  onSnapshot(collection(db, "cad_dispatchers"), snap => {
+    dispatcherOnline = !snap.empty;
+    const banner = document.getElementById("cad-dispatch-banner");
+    const selfDispatch = document.getElementById("cad-self-dispatch-note");
+    if (banner) banner.style.display = dispatcherOnline ? "flex" : "none";
+    if (selfDispatch) selfDispatch.style.display = dispatcherOnline ? "none" : "flex";
+
+    // Show dispatcher names in banner
+    if (dispatcherOnline && banner) {
+      const names = snap.docs.map(d => d.data().callsign).join(", ");
+      const el = document.getElementById("cad-dispatcher-names");
+      if (el) el.textContent = names;
+    }
+  });
+
+  window.cadBecomeDispatcher = async function() {
+    if (!cadSignedIn) { alert("Sign in to CAD first."); return; }
+    dispatcherId = "DISP_" + cadCallsign;
+    await setDoc(doc(db, "cad_dispatchers", dispatcherId), {
+      callsign: cadCallsign, dept: cadDept,
+      since: serverTimestamp()
+    });
+    document.getElementById("cad-become-disp-btn").style.display = "none";
+    document.getElementById("cad-leave-disp-btn").style.display  = "inline-flex";
+  };
+
+  window.cadLeaveDispatch = async function() {
+    if (!dispatcherId) return;
+    await deleteDoc(doc(db, "cad_dispatchers", dispatcherId));
+    dispatcherId = null;
+    document.getElementById("cad-become-disp-btn").style.display = "inline-flex";
+    document.getElementById("cad-leave-disp-btn").style.display  = "none";
+  };
+
+  // Clean up dispatcher on page unload
+  window.addEventListener("beforeunload", () => {
+    if (dispatcherId) deleteDoc(doc(db, "cad_dispatchers", dispatcherId));
+    if (cadUnitId)    deleteDoc(doc(db, "cad_units", cadUnitId));
+  });
+
+  // ── EAS SYSTEM ────────────────────────────────────────────────
+  window.cadBroadcastEAS = async function() {
+    const type    = document.getElementById("eas-type").value;
+    const area    = document.getElementById("eas-area").value.trim();
+    const msg     = document.getElementById("eas-msg").value.trim();
+    const expires = document.getElementById("eas-expires").value;
+    if (!msg) { alert("Please enter an alert message."); return; }
+
+    const data = {
+      type, area: area || "Stilton County", message: msg,
+      issuedBy: cadCallsign || "Dispatch",
+      issuedAt: serverTimestamp(),
+      expiresAt: expires || null,
+      active: true
+    };
+
+    // Store in Firestore — this IS the radio endpoint
+    await setDoc(doc(db, "eas_active", "current"), data);
+
+    // Play EAS attention tone
+    playEASTone();
+
+    document.getElementById("eas-msg").value = "";
+    document.getElementById("eas-area").value = "";
+    alert("EAS alert broadcast. Your radio software can poll:\nhttps://firestore.googleapis.com/v1/projects/scrps-9e40a/databases/(default)/documents/eas_active/current");
+  };
+
+  window.cadClearEAS = async function() {
+    await deleteDoc(doc(db, "eas_active", "current"));
+  };
+
+  // Live EAS display
+  onSnapshot(doc(db, "eas_active", "current"), snap => {
+    const panel  = document.getElementById("eas-active-panel");
+    const noEas  = document.getElementById("eas-no-alert");
+    if (!panel) return;
+    if (!snap.exists()) {
+      panel.style.display = "none";
+      if (noEas) noEas.style.display = "block";
+      return;
+    }
+    const d = snap.data();
+    if (noEas) noEas.style.display = "none";
+    panel.style.display = "block";
+    const EAS_TYPES = {
+      TOR:"Tornado Warning", SVR:"Severe Thunderstorm", FFW:"Flash Flood Warning",
+      EQW:"Earthquake Warning", HUW:"Hurricane Warning", CEM:"Civil Emergency",
+      LEW:"Law Enforcement", EAN:"Emergency Action Notification", RMT:"Required Monthly Test"
+    };
+    document.getElementById("eas-active-type").textContent = EAS_TYPES[d.type] || d.type;
+    document.getElementById("eas-active-area").textContent = d.area;
+    document.getElementById("eas-active-msg").textContent  = d.message;
+    document.getElementById("eas-active-by").textContent   = d.issuedBy;
+  });
+
+  function playEASTone() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      // Classic EAS attention tone: 853Hz + 960Hz for 8 seconds (shortened to 2s for demo)
+      const dur = 2;
+      [853, 960].forEach(freq => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type = "sine";
+        o.frequency.value = freq;
+        g.gain.setValueAtTime(0.12, ctx.currentTime);
+        g.gain.setValueAtTime(0.12, ctx.currentTime + dur - 0.05);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+        o.start(ctx.currentTime);
+        o.stop(ctx.currentTime + dur);
+      });
+      setTimeout(() => ctx.close(), (dur + 0.5) * 1000);
+    } catch(e) { console.warn("EAS audio error:", e); }
+  }
+
+
   // ── IMGUR UPLOAD (free, no storage cost) ─────────────────────
   // Register a free app at https://api.imgur.com/oauth2/addclient
   // (select "Anonymous usage without user authorization")
@@ -478,6 +654,7 @@
       PD:  ["Patrol Officer","Senior Officer","Corporal","Sergeant","Lieutenant","Captain","Deputy Chief","Chief of Police"],
       FD:  ["Firefighter","Senior Firefighter","Driver/Engineer","Lieutenant","Captain","Battalion Chief","Deputy Chief","Fire Chief"],
       EMS: ["EMT","Senior EMT","Paramedic","Senior Paramedic","Field Supervisor","EMS Lieutenant","EMS Captain","EMS Director"],
+      DOT: ["Traffic Controller","Road Inspector","Equipment Operator","Senior Inspector","Shift Supervisor","DOT Lieutenant","DOT Captain","DOT Director"],
     };
     sel.innerHTML = (roles[dept] || roles.PD).map(r => `<option value="${r}">${r}</option>`).join("");
   };
@@ -578,18 +755,22 @@
   // Live unit feed
   onSnapshot(query(collection(db,"cad_units"), orderBy("dept")), snap => {
     const pd = [], fd = [], ems = [];
+    const dot = [];
     snap.forEach(d => {
       const u = {id:d.id, ...d.data()};
       if      (u.dept==="PD")  pd.push(u);
       else if (u.dept==="FD")  fd.push(u);
+      else if (u.dept==="DOT") dot.push(u);
       else                      ems.push(u);
     });
     cadRenderUnits("cad-units-pd",  pd);
     cadRenderUnits("cad-units-fd",  fd);
     cadRenderUnits("cad-units-ems", ems);
+    cadRenderUnits("cad-units-dot", dot);
     document.getElementById("cad-count-pd").textContent  = pd.length;
     document.getElementById("cad-count-fd").textContent  = fd.length;
     document.getElementById("cad-count-ems").textContent = ems.length;
+    const dotEl = document.getElementById("cad-count-dot"); if(dotEl) dotEl.textContent = dot.length;
   });
 
   function cadRenderUnits(containerId, units) {
@@ -1491,6 +1672,86 @@ input[type="file"] { display: none; }
 }
 .cad-chat-send:hover { background: #2563eb; }
 
+/* ── DOT DEPT ── */
+:root { --dot-orange: #ea580c; --dot-orange-l: #ffedd5; --dot-dark: #7c2d12; }
+.hero-band.dot-hero { background: linear-gradient(135deg, #431407 0%, #ea580c 60%, #fb923c 100%); }
+.dot-card { border-left-color: var(--dot-orange) !important; }
+.modal-head.dot-head { background: var(--dot-orange); }
+.modal-head.dot-head .modal-head-text p { color: #fed7aa; }
+.dept-badge-dot { background: #ffedd5; color: #7c2d12; border: 1px solid #fdba74; }
+.tag-dot-info    { background: #fff7ed; color: #9a3412; }
+.tag-dot-closure { background: #fef2f2; color: #b91c1c; }
+.tag-dot-work    { background: #fef9c3; color: #713f12; }
+.tag-dot-hazard  { background: #fff7ed; color: #c2410c; }
+.tag-dot-update  { background: #f0fdf4; color: #166534; }
+
+/* DOT in CAD unit rows */
+.cad-dept-lbl.dot { border-color: #ea580c; color: #fdba74; }
+
+/* ── DISPATCHER BANNER ── */
+.cad-dispatch-banner {
+  display: none; align-items: center; gap: .6rem;
+  background: #052e16; border: 1px solid #16a34a40; border-radius: var(--r);
+  padding: .45rem .75rem; margin-bottom: .6rem; font-size: .72rem;
+}
+.cad-dispatch-dot { width: 7px; height: 7px; border-radius: 50%; background: #16a34a; animation: cadpip 1.5s ease-in-out infinite; flex-shrink: 0; }
+.cad-dispatch-text { color: #86efac; flex: 1; }
+.cad-self-dispatch {
+  display: none; align-items: center; gap: .6rem;
+  background: #1c1917; border: 1px solid #f59e0b40; border-radius: var(--r);
+  padding: .45rem .75rem; margin-bottom: .6rem; font-size: .72rem; color: #fcd34d;
+}
+
+/* ── EAS PANEL ── */
+.eas-active-panel {
+  display: none; background: #1c0000; border: 2px solid #dc2626;
+  border-radius: var(--r); padding: .65rem .85rem; margin-bottom: .75rem;
+  animation: panicFlash 2s ease-in-out infinite;
+}
+.eas-active-header {
+  display: flex; align-items: center; gap: .5rem; margin-bottom: .4rem;
+}
+.eas-active-label {
+  font-size: .62rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
+  color: #dc2626; background: #450a0a; padding: .18rem .5rem; border-radius: 3px;
+}
+.eas-active-type { font-size: .75rem; font-weight: 700; color: #fca5a5; }
+.eas-active-area { font-size: .68rem; color: #94a3b8; margin-bottom: .3rem; }
+.eas-active-msg  { font-size: .78rem; color: #f1f5f9; line-height: 1.5; }
+.eas-active-footer { font-size: .6rem; color: #475569; margin-top: .4rem; font-family: var(--mono); }
+.eas-no-alert { font-size: .72rem; color: #475569; font-style: italic; padding: .25rem 0; }
+.eas-form { display: flex; flex-direction: column; gap: .4rem; }
+.eas-form select, .eas-form input, .eas-form textarea {
+  width: 100%; background: #0f172a; border: 1px solid #334155;
+  border-radius: var(--r); color: #f1f5f9; font-family: var(--sans);
+  font-size: .88rem; padding: .38rem .6rem; outline: none; transition: border-color .15s;
+  -webkit-appearance: none; appearance: none;
+}
+.eas-form textarea { resize: vertical; min-height: 60px; }
+.eas-form select:focus, .eas-form input:focus, .eas-form textarea:focus { border-color: #dc2626; }
+.eas-form input::placeholder, .eas-form textarea::placeholder { color: #475569; }
+.eas-broadcast-btn {
+  width: 100%; padding: .48rem; background: #dc2626; color: #fff;
+  border: none; border-radius: var(--r); font-family: var(--sans);
+  font-size: .82rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+  cursor: pointer; transition: background .15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.eas-broadcast-btn:hover { background: #b91c1c; }
+.eas-clear-btn {
+  width: 100%; padding: .38rem; background: transparent; color: #475569;
+  border: 1px solid #334155; border-radius: var(--r); font-family: var(--sans);
+  font-size: .75rem; font-weight: 600; cursor: pointer; margin-top: .3rem;
+  transition: all .15s; -webkit-tap-highlight-color: transparent;
+}
+.eas-clear-btn:hover { border-color: #dc2626; color: #dc2626; }
+.eas-radio-note {
+  font-size: .65rem; color: #334155; font-family: var(--mono);
+  background: #0f172a; border: 1px solid #1e293b; border-radius: var(--r);
+  padding: .4rem .55rem; margin-top: .5rem; line-height: 1.5; word-break: break-all;
+}
+.eas-radio-note strong { color: #475569; display: block; margin-bottom: .2rem; }
+
 /* ── MISC ── */
 .empty-state { text-align: center; padding: 2.5rem 1rem; color: var(--gray-3); font-size: .85rem; }
 .empty-icon-text { font-family: var(--mono); font-size: .78rem; margin-bottom: .5rem; letter-spacing: .1em; }
@@ -1570,6 +1831,7 @@ footer strong { color: #9ab0d0; }
     <button class="nav-tab"        id="tab-emer" onclick="showPage('emer')">Emergency</button>
     <button class="nav-tab"        id="tab-pd"   onclick="showPage('pd')">Police Dept</button>
     <button class="nav-tab"        id="tab-fd"   onclick="showPage('fd')">Fire Dept</button>
+    <button class="nav-tab"        id="tab-dot"  onclick="showPage('dot')">DOT</button>
     <button class="nav-tab"        id="tab-cad"  onclick="showPage('cad')">CAD</button>
   </div>
 </div>
@@ -2007,6 +2269,44 @@ footer strong { color: #9ab0d0; }
   </div>
 </div>
 
+<!-- ======================== DOT PAGE ======================== -->
+<div class="page" id="page-dot">
+  <div class="hero-band dot-hero">
+    <div class="hero-inner">
+      <div class="hero-eyebrow">Stilton County Dept of Transportation</div>
+      <h1>Department of Transportation</h1>
+      <p>Official road closures, works notices, hazard warnings, and department updates from SCDOT.</p>
+    </div>
+  </div>
+  <div class="page-body">
+    <div>
+      <div class="section-label">
+        <h2>DOT Posts &amp; Notices</h2>
+        <button class="add-btn" style="background:var(--dot-orange);border-color:var(--dot-orange);color:#fff;" onclick="openPinModal('dot')">Post to DOT Board</button>
+      </div>
+      <div id="dot-list"><div class="loading-text">Loading DOT posts…</div></div>
+    </div>
+    <div class="sidebar-col">
+      <div class="widget">
+        <div class="widget-header" style="background:var(--dot-dark);">Department Info</div>
+        <div class="widget-body">
+          <p style="margin-bottom:.6rem;"><span class="dept-badge dept-badge-dot">SCDOT</span></p>
+          <p>Official board for the <strong>Stilton County Department of Transportation</strong>. DOT PIN required to post. Staff PIN also grants access.</p>
+        </div>
+      </div>
+      <div class="widget">
+        <div class="widget-header" style="background:var(--dot-dark);">Post Categories</div>
+        <div class="widget-body" style="padding:.4rem 1rem;">
+          <div class="quick-link" style="color:var(--dot-orange);">Road Closures</div>
+          <div class="quick-link" style="color:var(--dot-orange);">Road Works</div>
+          <div class="quick-link" style="color:var(--dot-orange);">Hazard Warnings</div>
+          <div class="quick-link" style="color:var(--dot-orange);">Department Updates</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ======================== CAD PAGE ======================== -->
 <div class="page" id="page-cad">
   <div class="cad-hero">
@@ -2124,6 +2424,68 @@ footer strong { color: #9ab0d0; }
       </div>
 
 
+
+      <!-- Dispatcher Status -->
+      <div class="cad-panel">
+        <div class="cad-panel-head">Dispatch Status</div>
+        <div class="cad-panel-body">
+          <div class="cad-dispatch-banner" id="cad-dispatch-banner">
+            <span class="cad-dispatch-dot"></span>
+            <span class="cad-dispatch-text">Dispatcher online: <strong id="cad-dispatcher-names">—</strong></span>
+          </div>
+          <div class="cad-self-dispatch" id="cad-self-dispatch-note">
+            <span style="font-size:.85rem">⚠</span>
+            <span>No dispatcher — units self-dispatching</span>
+          </div>
+          <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
+            <button id="cad-become-disp-btn" class="cad-log-btn" style="background:#16a34a;" onclick="cadBecomeDispatcher()">Go On as Dispatcher</button>
+            <button id="cad-leave-disp-btn"  class="cad-log-btn" style="background:#475569;display:none;" onclick="cadLeaveDispatch()">Leave Dispatch</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- EAS -->
+      <div class="cad-panel" style="border-color:#dc262640;">
+        <div class="cad-panel-head" style="background:#1c0000;color:#fca5a5;">EAS — Emergency Alert System</div>
+        <div class="cad-panel-body">
+          <!-- Active alert display -->
+          <p class="eas-no-alert" id="eas-no-alert">No active EAS alert.</p>
+          <div class="eas-active-panel" id="eas-active-panel">
+            <div class="eas-active-header">
+              <span class="eas-active-label">ACTIVE EAS</span>
+              <span class="eas-active-type" id="eas-active-type"></span>
+            </div>
+            <div class="eas-active-area" id="eas-active-area"></div>
+            <div class="eas-active-msg"  id="eas-active-msg"></div>
+            <div class="eas-active-footer">Issued by: <span id="eas-active-by"></span></div>
+          </div>
+          <!-- Broadcast form -->
+          <div class="eas-form" style="margin-top:.6rem;">
+            <select id="eas-type">
+              <option value="CEM">Civil Emergency</option>
+              <option value="LEW">Law Enforcement Warning</option>
+              <option value="TOR">Tornado Warning</option>
+              <option value="SVR">Severe Thunderstorm</option>
+              <option value="FFW">Flash Flood Warning</option>
+              <option value="EQW">Earthquake Warning</option>
+              <option value="HUW">Hurricane Warning</option>
+              <option value="EAN">Emergency Action Notification</option>
+              <option value="RMT">Required Monthly Test</option>
+            </select>
+            <input type="text" id="eas-area" placeholder="Affected area (e.g. Downtown, Route 9)">
+            <textarea id="eas-msg" rows="2" placeholder="Alert message for broadcast…"></textarea>
+            <input type="text" id="eas-expires" placeholder="Expires (e.g. 6:00 PM, Until Further Notice)">
+            <button class="eas-broadcast-btn" onclick="cadBroadcastEAS()">Broadcast EAS Alert</button>
+            <button class="eas-clear-btn" onclick="cadClearEAS()">Clear Active Alert</button>
+          </div>
+          <!-- Radio integration note -->
+          <div class="eas-radio-note">
+            <strong>Radio Integration Endpoint:</strong>
+            https://firestore.googleapis.com/v1/projects/scrps-9e40a/databases/(default)/documents/eas_active/current
+          </div>
+        </div>
+      </div>
+
       <!-- CAD Chat -->
       <div class="cad-panel">
         <div class="cad-panel-head">CAD Chat / Dispatch Notes</div>
@@ -2150,6 +2512,8 @@ footer strong { color: #9ab0d0; }
           <div id="cad-units-fd"></div>
           <div class="cad-dept-lbl ems" style="margin-top:.5rem">EMS <span class="cad-count-pill" id="cad-count-ems">0</span></div>
           <div id="cad-units-ems"></div>
+          <div class="cad-dept-lbl dot" style="margin-top:.5rem">DOT <span class="cad-count-pill" id="cad-count-dot">0</span></div>
+          <div id="cad-units-dot"></div>
         </div>
       </div>
 
@@ -2181,6 +2545,7 @@ footer strong { color: #9ab0d0; }
           <option value="PD">Police Department</option>
           <option value="FD">Fire Department</option>
           <option value="EMS">EMS</option>
+          <option value="DOT">DOT — Dept of Transportation</option>
         </select>
       </div>
       <div class="form-group">
@@ -2203,6 +2568,45 @@ footer strong { color: #9ab0d0; }
       </div>
       <hr class="modal-divider">
       <button class="submit-btn" style="background:#1d4ed8;color:#fff;" onclick="cadSignIn()">Go On Duty</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== DOT POST MODAL ======================== -->
+<div class="overlay" id="dot-overlay">
+  <div class="modal">
+    <div class="modal-head dot-head">
+      <div class="modal-head-text">
+        <h2>Post to DOT Board</h2>
+        <p>Stilton County Dept of Transportation</p>
+      </div>
+      <button class="modal-close" onclick="closeOverlay('dot-overlay')">&#x2715;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Post Type</label>
+        <select id="dot-type">
+          <option value="GENERAL">General Notice</option>
+          <option value="CLOSURE">Road Closure</option>
+          <option value="WORK">Road Works</option>
+          <option value="HAZARD">Hazard Warning</option>
+          <option value="UPDATE">Department Update</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Title / Subject</label>
+        <input type="text" id="dot-title" placeholder="e.g. Route 9 Closed — Bridge Inspection" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label>Details</label>
+        <textarea id="dot-body" rows="4" placeholder="Describe the closure, works, or hazard details…"></textarea>
+      </div>
+      <div class="form-group">
+        <label>Posted By</label>
+        <input type="text" id="dot-author" placeholder="e.g. DOT Supervisor Williams" autocomplete="off">
+      </div>
+      <hr class="modal-divider">
+      <button class="submit-btn" style="background:var(--dot-orange);color:#fff;" onclick="submitDOT()">Post to DOT Board</button>
     </div>
   </div>
 </div>
