@@ -37,6 +37,50 @@
 
   let pendingAction = null;
 
+
+  // ── AUDIO UNLOCK ─────────────────────────────────────────────
+  // Browsers block audio until user interaction. This unlocks it.
+  let audioUnlocked = false;
+
+  window.unlockAudio = function() {
+    if (audioUnlocked) return;
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      // Play a silent buffer — this is the user-gesture that unlocks audio
+      const buf = ctx.createBuffer(1, 1, 22050);
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(ctx.destination);
+      src.start(0);
+      ctx.resume().then(() => {
+        ctx.close();
+        audioUnlocked = true;
+        const toast = document.getElementById("audio-unlock-toast");
+        if (toast) {
+          toast.classList.add("unlocked");
+          toast.querySelector(".toast-text").innerHTML =
+            "<strong>Alerts Enabled</strong>You will hear EAS alerts on this tab.";
+          toast.onclick = null;
+          setTimeout(() => { toast.style.display = "none"; }, 2500);
+        }
+      });
+    } catch(e) {
+      console.warn("Audio unlock error:", e);
+      audioUnlocked = true;
+    }
+  };
+
+  window.dismissAudioToast = function() {
+    const toast = document.getElementById("audio-unlock-toast");
+    if (toast) toast.style.display = "none";
+  };
+
+  // Also unlock on any click anywhere on the page (backup)
+  document.addEventListener("click", function onFirstClick() {
+    if (!audioUnlocked) unlockAudio();
+    document.removeEventListener("click", onFirstClick);
+  }, { once: true });
+
   // ── CAD STATE ────────────────────────────────────────────────
   let cadUnitId   = null;
   let cadCallsign = null;
@@ -609,6 +653,8 @@
     // ── Tones ────────────────────────────────────────────────────
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      // Resume in case browser suspended it
+      if (ctx.state === "suspended") ctx.resume();
 
       // 1. Three sharp header beeps
       [0, 0.35, 0.7].forEach(t => {
@@ -1903,6 +1949,31 @@ input[type="file"] { display: none; }
 }
 .eas-radio-note strong { color: #475569; display: block; margin-bottom: .2rem; }
 
+/* ── AUDIO UNLOCK TOAST ── */
+#audio-unlock-toast {
+  position: fixed; bottom: 1.25rem; right: 1.25rem; z-index: 10000;
+  background: var(--navy); border: 1px solid var(--gold); border-radius: var(--r);
+  padding: .75rem 1rem; display: flex; align-items: center; gap: .75rem;
+  box-shadow: 0 4px 20px rgba(0,0,0,.4); animation: toastIn .3s ease;
+  max-width: 280px; cursor: pointer;
+}
+@keyframes toastIn { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+#audio-unlock-toast:hover { border-color: var(--gold-l); }
+.toast-icon { font-size: 1.4rem; flex-shrink: 0; }
+.toast-text { font-size: .75rem; color: #e2e8f0; line-height: 1.4; }
+.toast-text strong { color: var(--gold-l); display: block; font-size: .78rem; }
+.toast-close {
+  background: none; border: none; color: #64748b; font-size: 1rem;
+  cursor: pointer; padding: 0; flex-shrink: 0; line-height: 1;
+  -webkit-tap-highlight-color: transparent;
+}
+.toast-close:hover { color: #fff; }
+#audio-unlock-toast.unlocked {
+  border-color: #16a34a; background: #052e16;
+  animation: toastIn .2s ease;
+}
+#audio-unlock-toast.unlocked .toast-text strong { color: #86efac; }
+
 /* ── MISC ── */
 .empty-state { text-align: center; padding: 2.5rem 1rem; color: var(--gray-3); font-size: .85rem; }
 .empty-icon-text { font-family: var(--mono); font-size: .78rem; margin-bottom: .5rem; letter-spacing: .1em; }
@@ -1949,6 +2020,17 @@ footer strong { color: #9ab0d0; }
   <span style="font-size:.65rem;color:#ef4444;white-space:nowrap;flex-shrink:0;">ALL UNITS</span>
 </div>
 
+
+
+<!-- ======================== AUDIO UNLOCK TOAST ======================== -->
+<div id="audio-unlock-toast" onclick="unlockAudio()">
+  <span class="toast-icon">🔔</span>
+  <div class="toast-text">
+    <strong>Enable EAS Alerts</strong>
+    Click here to enable emergency audio alerts for this session.
+  </div>
+  <button class="toast-close" onclick="event.stopPropagation();dismissAudioToast()" title="Dismiss">&#x2715;</button>
+</div>
 
 <!-- UTILITY BAR -->
 <div class="utility-bar">
