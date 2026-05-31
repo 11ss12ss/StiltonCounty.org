@@ -136,13 +136,15 @@
       if (action === "emer")  { openOverlay("emer-overlay"); return; }
       if (action === "pd")    { openOverlay("pd-overlay");   return; }
       if (action === "fd")    { openOverlay("fd-overlay");   return; }
+      if (action === "dot")   { openOverlay("dot-overlay");  return; }
       if (action && action.type === 'del') {
         const confirmMsg = {
           announcements: "Remove this announcement?",
           events:        "Remove this event?",
           emergencies:   "Resolve and remove this alert?",
           pd_posts:      "Remove this PD post?",
-          fd_posts:      "Remove this FD post?"
+          fd_posts:      "Remove this FD post?",
+          dot_posts:     "Remove this DOT post?"
         }[action.col] || "Remove this item?";
         if (!confirm(confirmMsg)) return;
         try { await deleteDoc(doc(db, action.col, action.id)); }
@@ -514,6 +516,7 @@
     });
     document.getElementById("cad-become-disp-btn").style.display = "none";
     document.getElementById("cad-leave-disp-btn").style.display  = "inline-flex";
+    setEASFormLocked(false);
   };
 
   window.cadLeaveDispatch = async function() {
@@ -522,7 +525,18 @@
     dispatcherId = null;
     document.getElementById("cad-become-disp-btn").style.display = "inline-flex";
     document.getElementById("cad-leave-disp-btn").style.display  = "none";
+    setEASFormLocked(true);
   };
+
+  function setEASFormLocked(locked) {
+    const form    = document.getElementById("eas-form-wrap");
+    const lockMsg = document.getElementById("eas-lock-msg");
+    if (!form) return;
+    form.style.opacity        = locked ? "0.35" : "1";
+    form.style.pointerEvents  = locked ? "none" : "auto";
+    form.style.userSelect     = locked ? "none" : "auto";
+    if (lockMsg) lockMsg.style.display = locked ? "block" : "none";
+  }
 
   // Clean up dispatcher on page unload
   window.addEventListener("beforeunload", () => {
@@ -532,6 +546,10 @@
 
   // ── EAS SYSTEM ────────────────────────────────────────────────
   window.cadBroadcastEAS = async function() {
+    if (!dispatcherId) {
+      alert("Only the active dispatcher can broadcast an EAS alert.\n\nClick \"Go On as Dispatcher\" first.");
+      return;
+    }
     const type    = document.getElementById("eas-type").value;
     const area    = document.getElementById("eas-area").value.trim();
     const msg     = document.getElementById("eas-msg").value.trim();
@@ -546,18 +564,19 @@
       active: true
     };
 
-    // Store in Firestore — this IS the radio endpoint
     await setDoc(doc(db, "eas_active", "current"), data);
 
-    // Play EAS attention tone
-    playEASTone();
-
-    document.getElementById("eas-msg").value = "";
-    document.getElementById("eas-area").value = "";
+    document.getElementById("eas-msg").value    = "";
+    document.getElementById("eas-area").value   = "";
+    document.getElementById("eas-expires").value = "";
     alert("EAS alert broadcast. Your radio software can poll:\nhttps://firestore.googleapis.com/v1/projects/scrps-9e40a/databases/(default)/documents/eas_active/current");
   };
 
   window.cadClearEAS = async function() {
+    if (!dispatcherId) {
+      alert("Only the active dispatcher can clear an EAS alert.");
+      return;
+    }
     await deleteDoc(doc(db, "eas_active", "current"));
   };
 
@@ -585,26 +604,133 @@
     document.getElementById("eas-active-by").textContent   = d.issuedBy;
   });
 
-  function playEASTone() {
+  // ── GLOBAL EAS AUDIO + ROBOTIC VOICE (plays on every tab) ───────
+  function playEASTone(alertType, alertArea, alertMsg) {
+    // ── Tones ────────────────────────────────────────────────────
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      // Classic EAS attention tone: 853Hz + 960Hz for 8 seconds (shortened to 2s for demo)
-      const dur = 2;
+
+      // 1. Three sharp header beeps
+      [0, 0.35, 0.7].forEach(t => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type = "square";
+        o.frequency.value = 1050;
+        g.gain.setValueAtTime(0, ctx.currentTime + t);
+        g.gain.linearRampToValueAtTime(0.25, ctx.currentTime + t + 0.02);
+        g.gain.setValueAtTime(0.25, ctx.currentTime + t + 0.2);
+        g.gain.linearRampToValueAtTime(0, ctx.currentTime + t + 0.25);
+        o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.25);
+      });
+
+      // 2. Classic EAS dual-tone: 853Hz + 960Hz for 8 seconds
+      const toneStart = 1.1;
+      const toneDur   = 8.0;
       [853, 960].forEach(freq => {
         const o = ctx.createOscillator();
         const g = ctx.createGain();
         o.connect(g); g.connect(ctx.destination);
         o.type = "sine";
         o.frequency.value = freq;
-        g.gain.setValueAtTime(0.12, ctx.currentTime);
-        g.gain.setValueAtTime(0.12, ctx.currentTime + dur - 0.05);
-        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
-        o.start(ctx.currentTime);
-        o.stop(ctx.currentTime + dur);
+        g.gain.setValueAtTime(0, ctx.currentTime + toneStart);
+        g.gain.linearRampToValueAtTime(0.2, ctx.currentTime + toneStart + 0.08);
+        g.gain.setValueAtTime(0.2, ctx.currentTime + toneStart + toneDur - 0.1);
+        g.gain.linearRampToValueAtTime(0, ctx.currentTime + toneStart + toneDur);
+        o.start(ctx.currentTime + toneStart);
+        o.stop(ctx.currentTime + toneStart + toneDur);
       });
-      setTimeout(() => ctx.close(), (dur + 0.5) * 1000);
+
+      // 3. Two end beeps
+      const endT = toneStart + toneDur + 0.2;
+      [endT, endT + 0.4].forEach(t => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type = "sine"; o.frequency.value = 853;
+        g.gain.setValueAtTime(0.18, ctx.currentTime + t);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.32);
+        o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.32);
+      });
+
+      const totalDur = (toneStart + toneDur + 1.2) * 1000;
+      setTimeout(() => ctx.close(), totalDur);
+
+      // ── Robotic voice after tones finish ───────────────────────
+      const EAS_LABELS = {
+        TOR:"Tornado Warning", SVR:"Severe Thunderstorm Warning",
+        FFW:"Flash Flood Warning", EQW:"Earthquake Warning",
+        HUW:"Hurricane Warning", CEM:"Civil Emergency Message",
+        LEW:"Law Enforcement Warning",
+        EAN:"Emergency Action Notification",
+        RMT:"Required Monthly Test"
+      };
+      const typeLabel = EAS_LABELS[alertType] || alertType || "Emergency Alert";
+      const area      = alertArea || "Stilton County";
+      const msg       = alertMsg  || "";
+
+      const speechText =
+        "Attention. Attention. " +
+        "The Stilton County Emergency Alert System has issued a " + typeLabel +
+        " for " + area + ". " +
+        (msg ? msg + ". " : "") +
+        "This is an official emergency broadcast. " +
+        "All units please respond accordingly. " +
+        "This concludes the emergency alert.";
+
+      setTimeout(() => {
+        if (!window.speechSynthesis) return;
+        window.speechSynthesis.cancel();
+        const utt = new SpeechSynthesisUtterance(speechText);
+        utt.rate   = 0.78;   // slower = more robotic/authoritative
+        utt.pitch  = 0.6;    // lower pitch
+        utt.volume = 1.0;
+        // Try to pick a male/robotic voice if available
+        const voices = window.speechSynthesis.getVoices();
+        const preferred = voices.find(v =>
+          /david|mark|fred|microsoft david|google uk english male|daniel/i.test(v.name)
+        ) || voices.find(v => v.lang === "en-US" && !v.name.toLowerCase().includes("female"))
+          || voices[0];
+        if (preferred) utt.voice = preferred;
+        window.speechSynthesis.speak(utt);
+      }, (toneStart + toneDur + 1.0) * 1000);
+
     } catch(e) { console.warn("EAS audio error:", e); }
   }
+
+  // ── GLOBAL EAS LISTENER — fires on every open tab ─────────────
+  let easWasActive = false;
+  onSnapshot(doc(db, "eas_active", "current"), snap => {
+    const banner = document.getElementById("eas-global-banner");
+    const bannerMsg = document.getElementById("eas-global-msg");
+    const bannerType = document.getElementById("eas-global-type");
+
+    if (!snap.exists()) {
+      easWasActive = false;
+      if (banner) banner.style.display = "none";
+      return;
+    }
+
+    const d = snap.data();
+    const EAS_TYPES = {
+      TOR:"Tornado Warning", SVR:"Severe Thunderstorm", FFW:"Flash Flood Warning",
+      EQW:"Earthquake Warning", HUW:"Hurricane Warning", CEM:"Civil Emergency",
+      LEW:"Law Enforcement Warning", EAN:"Emergency Action Notification", RMT:"Required Monthly Test"
+    };
+
+    // Show global banner on all pages
+    if (banner) {
+      banner.style.display = "flex";
+      if (bannerType) bannerType.textContent = EAS_TYPES[d.type] || d.type;
+      if (bannerMsg)  bannerMsg.textContent  = d.message + (d.area ? " — " + d.area : "");
+    }
+
+    // Play sound only when alert first appears (not on re-renders)
+    if (!easWasActive) {
+      playEASTone(d.type, d.area, d.message);
+    }
+    easWasActive = true;
+  });
 
 
   // ── IMGUR UPLOAD (free, no storage cost) ─────────────────────
@@ -1031,6 +1157,8 @@ header {
   background: var(--white); border-bottom: 1px solid var(--gray-2);
   box-shadow: var(--shadow); position: sticky; top: 0; z-index: 100;
 }
+/* Push header below EAS banner when active */
+#eas-global-banner[style*="flex"] ~ * header { top: 38px; }
 .header-main {
   max-width: 1200px; margin: 0 auto;
   padding: .75rem 1.25rem; display: flex; align-items: center; gap: 1rem;
@@ -1619,6 +1747,7 @@ input[type="file"] { display: none; }
   animation: panicFlash 1s ease-in-out infinite;
 }
 @keyframes panicFlash { 0%,100%{border-color:#dc2626} 50%{border-color:#fca5a5} }
+@keyframes easBannerFlash { 0%,100%{background:#7f1d1d} 50%{background:#991b1b} }
 .cad-panic-banner-label {
   font-size: .72rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
   color: #fca5a5; white-space: nowrap;
@@ -1783,6 +1912,21 @@ footer strong { color: #9ab0d0; }
 </style>
 </head>
 <body>
+
+<!-- ======================== GLOBAL EAS BANNER ======================== -->
+<div id="eas-global-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;
+  background:#7f1d1d;border-bottom:3px solid #dc2626;
+  padding:.55rem 1.25rem;align-items:center;gap:.75rem;
+  animation:easBannerFlash 1s ease-in-out infinite;
+  box-shadow:0 4px 20px rgba(220,38,38,.5);">
+  <span style="font-size:.65rem;font-weight:800;letter-spacing:.14em;text-transform:uppercase;
+    color:#dc2626;background:#450a0a;padding:.2rem .55rem;border-radius:3px;
+    white-space:nowrap;flex-shrink:0;">EAS ALERT</span>
+  <span id="eas-global-type" style="font-size:.75rem;font-weight:700;color:#fca5a5;white-space:nowrap;flex-shrink:0;"></span>
+  <span id="eas-global-msg"  style="font-size:.75rem;color:#fecaca;flex:1;"></span>
+  <span style="font-size:.65rem;color:#ef4444;white-space:nowrap;flex-shrink:0;">ALL UNITS</span>
+</div>
+
 
 <!-- UTILITY BAR -->
 <div class="utility-bar">
@@ -2460,7 +2604,10 @@ footer strong { color: #9ab0d0; }
             <div class="eas-active-footer">Issued by: <span id="eas-active-by"></span></div>
           </div>
           <!-- Broadcast form -->
-          <div class="eas-form" style="margin-top:.6rem;">
+          <p id="eas-lock-msg" style="font-size:.7rem;color:#dc2626;font-weight:600;margin:.5rem 0 .4rem;letter-spacing:.04em;">
+            &#x1F512; Dispatcher role required to broadcast EAS.
+          </p>
+          <div id="eas-form-wrap" style="opacity:0.35;pointer-events:none;user-select:none;" class="eas-form">
             <select id="eas-type">
               <option value="CEM">Civil Emergency</option>
               <option value="LEW">Law Enforcement Warning</option>
