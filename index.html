@@ -94,17 +94,46 @@
     AVAILABLE: "🟢", BUSY: "🟡", RESPONDING: "🔵", ON_SCENE: "🟣", TRAFFIC: "🔵",
   };
 
+  // Queue Discord messages through Firestore so any tab can process them.
+  // This avoids CORS issues — the message goes to Firestore, then one tab
+  // picks it up and sends it to Discord.
   async function sendDiscord(payload) {
     try {
-      // Discord blocks direct browser fetch (CORS). Route through corsproxy.io.
-      const proxyUrl = "https://corsproxy.io/?" + encodeURIComponent(DISCORD_WEBHOOK);
-      await fetch(proxyUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+      await addDoc(collection(db, "discord_queue"), {
+        payload: JSON.stringify(payload),
+        sentAt: serverTimestamp(),
+        processed: false
       });
-    } catch(e) { console.warn("Discord webhook error:", e); }
+    } catch(e) { console.warn("Discord queue error:", e); }
   }
+
+  // Process the Discord queue — whichever tab sees a new unprocessed message
+  // first will send it to Discord and mark it processed.
+  const DISCORD_PROXY = "https://corsproxy.io/?" + encodeURIComponent(DISCORD_WEBHOOK);
+
+  onSnapshot(
+    query(collection(db, "discord_queue"), orderBy("sentAt", "desc")),
+    async snap => {
+      for (const docSnap of snap.docs) {
+        const d = docSnap.data();
+        if (d.processed) continue;
+        // Mark processed immediately to prevent other tabs sending it
+        try {
+          await updateDoc(doc(db, "discord_queue", docSnap.id), { processed: true });
+        } catch(e) { continue; } // another tab got there first
+        // Send to Discord
+        try {
+          await fetch(DISCORD_PROXY, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: d.payload
+          });
+        } catch(e) { console.warn("Discord send error:", e); }
+        // Clean up after 10 seconds
+        setTimeout(() => deleteDoc(doc(db, "discord_queue", docSnap.id)), 10000);
+      }
+    }
+  );
 
   function nowStr() {
     return new Date().toLocaleTimeString("en-US", { hour:"2-digit", minute:"2-digit", second:"2-digit" });
