@@ -96,7 +96,9 @@
 
   async function sendDiscord(payload) {
     try {
-      await fetch(DISCORD_WEBHOOK, {
+      // Discord blocks direct browser fetch (CORS). Route through corsproxy.io.
+      const proxyUrl = "https://corsproxy.io/?" + encodeURIComponent(DISCORD_WEBHOOK);
+      await fetch(proxyUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
