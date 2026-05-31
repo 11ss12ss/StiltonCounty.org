@@ -81,6 +81,169 @@
     document.removeEventListener("click", onFirstClick);
   }, { once: true });
 
+
+  // ── DISCORD WEBHOOKS ─────────────────────────────────────────
+  const DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1510720347203178587/ZiTnLGJ9DLfY_2_OD7CVz28UJrUomYYJxq2RNMPq91Z0-c2msgcMv_AXSydTIkaYOilz";
+
+  const DEPT_COLORS = { PD: 0x2563eb, FD: 0xdc2626, EMS: 0x16a34a, DOT: 0xea580c, SYS: 0xf59e0b };
+  const STATUS_COLORS = {
+    AVAILABLE:  0x16a34a, BUSY: 0xca8a04, RESPONDING: 0x2563eb,
+    ON_SCENE:   0x7c3aed, TRAFFIC: 0x0891b2,
+  };
+  const STATUS_EMOJI = {
+    AVAILABLE: "🟢", BUSY: "🟡", RESPONDING: "🔵", ON_SCENE: "🟣", TRAFFIC: "🔵",
+  };
+
+  async function sendDiscord(payload) {
+    try {
+      await fetch(DISCORD_WEBHOOK, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+    } catch(e) { console.warn("Discord webhook error:", e); }
+  }
+
+  function nowStr() {
+    return new Date().toLocaleTimeString("en-US", { hour:"2-digit", minute:"2-digit", second:"2-digit" });
+  }
+
+  // ── UNIT ON DUTY ─────────────────────────────────────────────
+  function discordOnDuty(callsign, dept, role) {
+    sendDiscord({ embeds: [{
+      title: "🚔 Unit On Duty",
+      color: DEPT_COLORS[dept] || 0x334155,
+      fields: [
+        { name: "Callsign", value: callsign, inline: true },
+        { name: "Department", value: dept === "PD" ? "Police Department" : dept === "FD" ? "Fire Department" : dept === "EMS" ? "EMS" : "Dept of Transportation", inline: true },
+        { name: "Role", value: role || "—", inline: true },
+      ],
+      footer: { text: "Stilton County CAD • " + nowStr() },
+      timestamp: new Date().toISOString()
+    }]});
+  }
+
+  // ── UNIT OFF DUTY ────────────────────────────────────────────
+  function discordOffDuty(callsign, dept, role) {
+    sendDiscord({ embeds: [{
+      title: "⬛ Unit Off Duty",
+      color: 0x475569,
+      fields: [
+        { name: "Callsign", value: callsign, inline: true },
+        { name: "Department", value: dept || "—", inline: true },
+        { name: "Role", value: role || "—", inline: true },
+      ],
+      footer: { text: "Stilton County CAD • " + nowStr() },
+      timestamp: new Date().toISOString()
+    }]});
+  }
+
+  // ── STATUS CHANGE ────────────────────────────────────────────
+  function discordStatusChange(callsign, dept, role, status, assignment) {
+    const emoji = STATUS_EMOJI[status] || "⚪";
+    const labels = {
+      AVAILABLE:"Available", BUSY:"Busy", RESPONDING:"Responding",
+      ON_SCENE:"On Scene", TRAFFIC:"Traffic Stop"
+    };
+    const fields = [
+      { name: "Callsign", value: callsign, inline: true },
+      { name: "Department", value: dept || "—", inline: true },
+      { name: "Role", value: role || "—", inline: true },
+      { name: "New Status", value: emoji + " " + (labels[status] || status), inline: true },
+    ];
+    if (assignment) fields.push({ name: "Assignment", value: assignment, inline: true });
+    sendDiscord({ embeds: [{
+      title: emoji + " Unit Status Update",
+      color: STATUS_COLORS[status] || 0x334155,
+      fields,
+      footer: { text: "Stilton County CAD • " + nowStr() },
+      timestamp: new Date().toISOString()
+    }]});
+  }
+
+  // ── PANIC BUTTON ────────────────────────────────────────────
+  function discordPanic(callsign, dept, role, assignment) {
+    sendDiscord({
+      content: "@here",
+      embeds: [{
+        title: "🚨 OFFICER NEEDS ASSISTANCE — PANIC ACTIVATED",
+        color: 0xdc2626,
+        description: "**" + callsign + "** has activated their panic button and requires immediate assistance.",
+        fields: [
+          { name: "Callsign", value: callsign, inline: true },
+          { name: "Department", value: dept || "—", inline: true },
+          { name: "Role", value: role || "—", inline: true },
+          { name: "Last Known Location", value: assignment || "Unknown", inline: false },
+        ],
+        footer: { text: "Stilton County CAD — EMERGENCY • " + nowStr() },
+        timestamp: new Date().toISOString()
+      }]
+    });
+  }
+
+  // ── EAS ALERT ───────────────────────────────────────────────
+  function discordEAS(type, area, message, issuedBy) {
+    const EAS_LABELS = {
+      TOR:"Tornado Warning", SVR:"Severe Thunderstorm Warning",
+      FFW:"Flash Flood Warning", EQW:"Earthquake Warning",
+      HUW:"Hurricane Warning", CEM:"Civil Emergency Message",
+      LEW:"Law Enforcement Warning", EAN:"Emergency Action Notification",
+      RMT:"Required Monthly Test"
+    };
+    sendDiscord({
+      content: "@here",
+      embeds: [{
+        title: "📡 EAS BROADCAST — " + (EAS_LABELS[type] || type),
+        color: 0xdc2626,
+        description: message,
+        fields: [
+          { name: "Alert Type", value: EAS_LABELS[type] || type, inline: true },
+          { name: "Affected Area", value: area || "Stilton County", inline: true },
+          { name: "Issued By", value: issuedBy || "Dispatch", inline: true },
+        ],
+        footer: { text: "Stilton County Emergency Alert System • " + nowStr() },
+        timestamp: new Date().toISOString()
+      }]
+    });
+  }
+
+  // ── EMERGENCY ALERT (from Emergency tab) ────────────────────
+  function discordEmergencyAlert(level, title, body, author) {
+    const isAdvisory = level === "ADVISORY";
+    sendDiscord({
+      content: isAdvisory ? "" : "@here",
+      embeds: [{
+        title: (isAdvisory ? "⚠️ ADVISORY" : "🚨 EMERGENCY ALERT") + " — " + title,
+        color: isAdvisory ? 0xc2410c : 0xdc2626,
+        description: body || "No additional details.",
+        fields: [
+          { name: "Level", value: isAdvisory ? "Advisory" : "Emergency", inline: true },
+          { name: "Issued By", value: author || "Stilton County Emergency Services", inline: true },
+        ],
+        footer: { text: "Stilton County Emergency Services • " + nowStr() },
+        timestamp: new Date().toISOString()
+      }]
+    });
+  }
+
+  // ── ANNOUNCEMENT POSTED ─────────────────────────────────────
+  function discordAnnouncement(type, title, body, author) {
+    const TYPE_LABELS = { INFO:"Information", NOTICE:"Public Notice", UPDATE:"Server Update", RULE:"Rule Change" };
+    const TYPE_COLORS = { INFO:0x2563eb, NOTICE:0xca8a04, UPDATE:0x16a34a, RULE:0xdc2626 };
+    const TYPE_EMOJI  = { INFO:"ℹ️", NOTICE:"📢", UPDATE:"🔄", RULE:"📋" };
+    sendDiscord({ embeds: [{
+      title: (TYPE_EMOJI[type] || "📢") + " New Announcement — " + title,
+      color: TYPE_COLORS[type] || 0x2563eb,
+      description: body,
+      fields: [
+        { name: "Category", value: TYPE_LABELS[type] || type, inline: true },
+        { name: "Posted By", value: author || "Server Administration", inline: true },
+      ],
+      footer: { text: "Stilton County Community Portal • " + nowStr() },
+      timestamp: new Date().toISOString()
+    }]});
+  }
+
   // ── CAD STATE ────────────────────────────────────────────────
   let cadUnitId   = null;
   let cadCallsign = null;
@@ -262,6 +425,7 @@
     if (!title || !body) { alert("Please fill in the title and body."); return; }
     try {
       await addDoc(collection(db,"announcements"), { type, title, body, author, createdAt: serverTimestamp() });
+      discordAnnouncement(type, title, body, author);
       closeOverlay("ann-overlay");
       clearFields(["ann-title","ann-body","ann-author"]);
     } catch(err) { alert("Error saving announcement: " + err.message); }
@@ -359,6 +523,7 @@
     if (!title) { alert("Please enter an alert title."); return; }
     try {
       await addDoc(collection(db,"emergencies"), { level, title, body, author, createdAt: serverTimestamp() });
+      discordEmergencyAlert(level, title, body, author);
       closeOverlay("emer-overlay");
       clearFields(["emer-title","emer-body","emer-author"]);
     } catch(err) { alert("Error issuing alert: " + err.message); }
@@ -892,13 +1057,18 @@
       assignment: "", updatedAt: serverTimestamp()
     });
     cadSetStatusUI("AVAILABLE");
+    discordOnDuty(cadCallsign, cadDept, role);
+    // Store role for later use
+    window._cadRole = role;
   };
 
   window.cadGoOffDuty = async function() {
     if (!cadUnitId) return;
     if (!confirm("Go off duty and sign out of CAD?")) return;
+    discordOffDuty(cadCallsign, cadDept, window._cadRole || "");
     await deleteDoc(doc(db, "cad_units", cadUnitId));
     cadUnitId = null; cadCallsign = null; cadDept = null; cadSignedIn = false;
+    window._cadRole = null;
     document.getElementById("cad-signin-panel").style.display = "block";
     document.getElementById("cad-my-panel").style.display     = "none";
     document.getElementById("cad-login-callsign").value = "";
@@ -909,6 +1079,7 @@
     const assignment = document.getElementById("cad-my-assignment").value.trim();
     await updateDoc(doc(db, "cad_units", cadUnitId), { status, assignment, updatedAt: serverTimestamp() });
     cadSetStatusUI(status);
+    discordStatusChange(cadCallsign, cadDept, window._cadRole || "", status, assignment);
   };
 
   function cadSetStatusUI(status) {
@@ -926,6 +1097,11 @@
     if (!cadUnitId) return;
     const assignment = document.getElementById("cad-my-assignment").value.trim();
     await updateDoc(doc(db, "cad_units", cadUnitId), { assignment, updatedAt: serverTimestamp() });
+    // Get current status badge text to include in update
+    const currentStatus = document.getElementById("cad-my-status-badge")?.textContent || "";
+    const statusKey = Object.keys({AVAILABLE:"Available",BUSY:"Busy",RESPONDING:"Responding",ON_SCENE:"On Scene",TRAFFIC:"Traffic Stop"})
+      .find(k => ({AVAILABLE:"Available",BUSY:"Busy",RESPONDING:"Responding",ON_SCENE:"On Scene",TRAFFIC:"Traffic Stop"})[k] === currentStatus) || "AVAILABLE";
+    discordStatusChange(cadCallsign, cadDept, window._cadRole || "", statusKey, assignment);
   };
 
   window.cadLogIncident = async function() {
@@ -1031,6 +1207,7 @@
       panic:    true,
       createdAt: serverTimestamp()
     });
+    discordPanic(cadCallsign, cadDept, window._cadRole || "", assignment);
   };
 
   // Panic feed — alert all signed-in users with sound
