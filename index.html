@@ -1045,6 +1045,144 @@
   });
 
 
+
+  // ── SHIFT SYSTEM ─────────────────────────────────────────────
+  let shiftClockInTime = null;
+  let shiftTimerInterval = null;
+
+  window.cadClockIn = async function() {
+    if (!cadSignedIn) { alert("Sign in to CAD first."); return; }
+    if (shiftClockInTime) { alert("You are already clocked in."); return; }
+    shiftClockInTime = Date.now();
+    shiftPausedMs = 0; shiftPausedAt = null;
+    await setDoc(doc(db, "cad_shifts_active", cadUnitId), {
+      callsign:  cadCallsign,
+      dept:      cadDept,
+      role:      window._cadRole || "",
+      clockIn:   serverTimestamp(),
+      clockInMs: shiftClockInTime
+    });
+    // Update UI
+    document.getElementById("shift-clock-in-btn").style.display  = "none";
+    document.getElementById("shift-clock-out-btn").style.display = "block";
+    document.getElementById("shift-active-indicator").style.display = "flex";
+    document.getElementById("shift-panel").classList.add("shift-clocked-in");
+    shiftTimerInterval = setInterval(updateShiftTimer, 10);
+    updateShiftTimer();
+    sendDiscord({ embeds: [{
+      title: (DEPT_EMOJIS[cadDept]||"🔵") + " Shift Started — " + (DEPT_LABELS[cadDept]||cadDept),
+      color: DEPT_COLORS[cadDept] || 0x16a34a,
+      fields: [
+        { name: "Callsign",   value: cadCallsign,              inline: true },
+        { name: "Department", value: DEPT_LABELS[cadDept]||cadDept, inline: true },
+        { name: "Role",       value: window._cadRole || "—",   inline: true },
+        { name: "Clock In",   value: new Date().toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit"}), inline: true },
+      ],
+      footer: { text: "Stilton County CAD — Shift System • " + nowStr() },
+      timestamp: new Date().toISOString()
+    }]});
+  };
+
+  window.cadClockOut = async function() {
+    if (!shiftClockInTime) return;
+    const clockOutMs  = Date.now();
+    // Subtract any time spent paused (BUSY status)
+    const totalPaused = shiftPausedMs + (shiftPausedAt ? Date.now() - shiftPausedAt : 0);
+    const durationMs  = clockOutMs - shiftClockInTime - totalPaused;
+    // Reset pause tracking
+    shiftPausedMs = 0; shiftPausedAt = null;
+    const hours       = Math.floor(durationMs / 3600000);
+    const minutes     = Math.floor((durationMs % 3600000) / 60000);
+    const durStr      = hours + "h " + minutes + "m";
+    clearInterval(shiftTimerInterval);
+    shiftTimerInterval = null;
+
+    // Save to shift log
+    await addDoc(collection(db, "cad_shift_logs"), {
+      callsign:    cadCallsign,
+      dept:        cadDept,
+      role:        window._cadRole || "",
+      clockIn:     shiftClockInTime,
+      clockOut:    clockOutMs,
+      durationMs,
+      durStr,
+      date:        new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})
+    });
+
+    // Remove active shift
+    await deleteDoc(doc(db, "cad_shifts_active", cadUnitId));
+    shiftClockInTime = null;
+
+    // Update UI
+    document.getElementById("shift-clock-in-btn").style.display  = "block";
+    document.getElementById("shift-clock-out-btn").style.display = "none";
+    document.getElementById("shift-active-indicator").style.display = "none";
+    document.getElementById("shift-timer").textContent = "00:00:00";
+    document.getElementById("shift-panel").classList.remove("shift-clocked-in");
+
+    sendDiscord({ embeds: [{
+      title: (DEPT_EMOJIS[cadDept]||"🔵") + " Shift Ended — " + (DEPT_LABELS[cadDept]||cadDept),
+      color: 0x475569,
+      fields: [
+        { name: "Callsign",   value: cadCallsign,              inline: true },
+        { name: "Department", value: DEPT_LABELS[cadDept]||cadDept, inline: true },
+        { name: "Role",       value: window._cadRole || "—",   inline: true },
+        { name: "Duration",   value: durStr,                   inline: true },
+        { name: "Clock Out",  value: new Date().toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit"}), inline: true },
+      ],
+      footer: { text: "Stilton County CAD — Shift System • " + nowStr() },
+      timestamp: new Date().toISOString()
+    }]});
+  };
+
+  function updateShiftTimer() {
+    if (!shiftClockInTime) return;
+    // Subtract any paused time from elapsed
+    const elapsed = Date.now() - shiftClockInTime - shiftPausedMs;
+    const h   = Math.floor(elapsed / 3600000);
+    const m   = Math.floor((elapsed % 3600000) / 60000);
+    const s   = Math.floor((elapsed % 60000) / 1000);
+    const ms  = Math.floor((elapsed % 1000) / 10);
+    const el  = document.getElementById("shift-timer");
+    if (el) el.textContent =
+      String(h).padStart(2,"0") + ":" +
+      String(m).padStart(2,"0") + ":" +
+      String(s).padStart(2,"0") + "." +
+      String(ms).padStart(2,"0");
+  }
+
+  // Shift log live feed — last 20 completed shifts
+  onSnapshot(query(collection(db,"cad_shift_logs"), orderBy("clockOut","desc")), snap => {
+    const list = document.getElementById("shift-log-list");
+    if (!list) return;
+    const docs = snap.docs.slice(0, 20);
+    if (docs.length === 0) {
+      list.innerHTML = '<div class="shift-no-logs">No shifts logged yet.</div>';
+      return;
+    }
+    list.innerHTML = docs.map(d => {
+      const s = d.data();
+      const deptEmoji = DEPT_EMOJIS[s.dept] || "🔵";
+      const clockInStr  = s.clockIn  ? new Date(s.clockIn).toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit"})  : "—";
+      const clockOutStr = s.clockOut ? new Date(s.clockOut).toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit"}) : "—";
+      return `<div class="shift-log-row">
+        <div class="shift-log-left">
+          <span class="shift-log-cs">${deptEmoji} ${esc(s.callsign)} <span style="font-size:.6rem;color:#64748b;font-family:var(--sans)">${esc(s.role||"")}</span></span>
+          <span class="shift-log-dept">${esc(DEPT_LABELS[s.dept]||s.dept||"")} · ${esc(s.date||"")}</span>
+          <span class="shift-log-time">In: ${clockInStr} → Out: ${clockOutStr}</span>
+        </div>
+        <span class="shift-log-dur">${esc(s.durStr||"")}</span>
+      </div>`;
+    }).join("");
+  });
+
+  // Auto clock out when page closes
+  window.addEventListener("beforeunload", () => {
+    if (shiftClockInTime && cadUnitId) {
+      deleteDoc(doc(db, "cad_shifts_active", cadUnitId));
+    }
+  });
+
   // ── IMGUR UPLOAD (free, no storage cost) ─────────────────────
   // Register a free app at https://api.imgur.com/oauth2/addclient
   // (select "Anonymous usage without user authorization")
@@ -1139,11 +1277,14 @@
     discordOnDuty(cadCallsign, cadDept, role);
     // Store role for later use
     window._cadRole = role;
+    // Auto clock in
+    cadClockIn();
   };
 
   window.cadGoOffDuty = async function() {
     if (!cadUnitId) return;
     if (!confirm("Go off duty and sign out of CAD?")) return;
+    if (shiftClockInTime) await cadClockOut();
     discordOffDuty(cadCallsign, cadDept, window._cadRole || "");
     await deleteDoc(doc(db, "cad_units", cadUnitId));
     cadUnitId = null; cadCallsign = null; cadDept = null; cadSignedIn = false;
@@ -1153,12 +1294,44 @@
     document.getElementById("cad-login-callsign").value = "";
   };
 
+  let shiftPausedAt   = null;   // timestamp when paused
+  let shiftPausedMs   = 0;      // total ms already paused
+
   window.cadSetStatus = async function(status) {
     if (!cadUnitId) return;
     const assignment = document.getElementById("cad-my-assignment").value.trim();
     await updateDoc(doc(db, "cad_units", cadUnitId), { status, assignment, updatedAt: serverTimestamp() });
     cadSetStatusUI(status);
     discordStatusChange(cadCallsign, cadDept, window._cadRole || "", status, assignment);
+
+    // Pause shift timer when BUSY, resume on any other status
+    if (shiftClockInTime) {
+      if (status === "BUSY") {
+        // Pause
+        if (!shiftPausedAt) {
+          shiftPausedAt = Date.now();
+          clearInterval(shiftTimerInterval);
+          shiftTimerInterval = null;
+          document.getElementById("shift-timer").style.color = "#64748b";
+          const pi = document.getElementById("shift-paused-indicator");
+          const ai = document.getElementById("shift-active-indicator");
+          if (pi) pi.style.display = "flex";
+          if (ai) ai.style.display = "none";
+        }
+      } else {
+        // Resume if was paused
+        if (shiftPausedAt) {
+          shiftPausedMs += Date.now() - shiftPausedAt;
+          shiftPausedAt = null;
+          document.getElementById("shift-timer").style.color = "#f59e0b";
+          shiftTimerInterval = setInterval(updateShiftTimer, 10);
+          const pi = document.getElementById("shift-paused-indicator");
+          const ai = document.getElementById("shift-active-indicator");
+          if (pi) pi.style.display = "none";
+          if (ai) ai.style.display = "flex";
+        }
+      }
+    }
   };
 
   function cadSetStatusUI(status) {
@@ -2297,6 +2470,42 @@ input[type="file"] { display: none; }
 }
 #audio-unlock-toast.unlocked .toast-text strong { color: #86efac; }
 
+/* ── SHIFT SYSTEM ── */
+.shift-clocked-in  { border-color: #16a34a !important; }
+.shift-clock-btn {
+  width: 100%; padding: .65rem; border: none; border-radius: var(--r);
+  font-family: var(--sans); font-size: .9rem; font-weight: 700;
+  cursor: pointer; transition: background .15s; letter-spacing: .04em;
+  -webkit-tap-highlight-color: transparent;
+}
+.shift-clock-in-btn  { background: #16a34a; color: #fff; }
+.shift-clock-in-btn:hover  { background: #15803d; }
+.shift-clock-out-btn { background: #dc2626; color: #fff; }
+.shift-clock-out-btn:hover { background: #b91c1c; }
+.shift-timer {
+  font-family: var(--mono); font-size: 1.15rem; font-weight: 700;
+  color: #f59e0b; text-align: center; padding: .5rem 0; letter-spacing: .05em;
+}
+.shift-status-row {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: .72rem; color: #64748b; margin-bottom: .5rem;
+}
+.shift-active-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: #16a34a;
+  animation: cadpip 1.5s ease-in-out infinite; flex-shrink: 0;
+}
+.shift-log-row {
+  background: #0f172a; border-radius: var(--r); padding: .38rem .55rem;
+  margin-bottom: .22rem; display: flex; justify-content: space-between;
+  align-items: center; gap: .5rem;
+}
+.shift-log-left { display: flex; flex-direction: column; gap: .1rem; }
+.shift-log-cs   { font-family: var(--mono); font-size: .72rem; font-weight: 600; color: #f1f5f9; }
+.shift-log-dept { font-size: .62rem; color: #64748b; }
+.shift-log-dur  { font-family: var(--mono); font-size: .72rem; color: #f59e0b; font-weight: 600; white-space: nowrap; }
+.shift-log-time { font-size: .6rem; color: #334155; font-family: var(--mono); }
+.shift-no-logs  { font-size: .7rem; color: #475569; font-style: italic; padding: .3rem .25rem; }
+
 /* ── MISC ── */
 .empty-state { text-align: center; padding: 2.5rem 1rem; color: var(--gray-3); font-size: .85rem; }
 .empty-icon-text { font-family: var(--mono); font-size: .78rem; margin-bottom: .5rem; letter-spacing: .1em; }
@@ -2978,6 +3187,28 @@ footer strong { color: #9ab0d0; }
         </div>
       </div>
 
+
+      <!-- Shift Clock -->
+      <div class="cad-panel" id="shift-panel">
+        <div class="cad-panel-head">Shift Clock</div>
+        <div class="cad-panel-body">
+          <div class="shift-status-row" id="shift-active-indicator" style="display:none;">
+            <span style="display:flex;align-items:center;gap:.4rem;color:#16a34a;font-weight:600;">
+              <span class="shift-active-dot"></span> Shift in progress
+            </span>
+          </div>
+          <div class="shift-status-row" id="shift-paused-indicator" style="display:none;">
+            <span style="display:flex;align-items:center;gap:.4rem;color:#64748b;font-weight:600;">
+              ⏸ Paused — Status set to Busy
+            </span>
+          </div>
+          <div class="shift-timer" id="shift-timer">00:00:00.00</div>
+          <div style="height:.4rem;"></div>
+          <button id="shift-clock-in-btn"  class="shift-clock-btn shift-clock-in-btn"  onclick="cadClockIn()" style="display:none;">Clock In</button>
+          <button id="shift-clock-out-btn" class="shift-clock-btn shift-clock-out-btn" onclick="cadClockOut()" style="display:none;">Clock Out Early</button>
+        </div>
+      </div>
+
     </div><!-- end left col -->
 
     <!-- RIGHT COLUMN: LIVE FEEDS -->
@@ -3088,6 +3319,15 @@ footer strong { color: #9ab0d0; }
           <div id="cad-units-ems"></div>
           <div class="cad-dept-lbl dot" style="margin-top:.5rem">DOT <span class="cad-count-pill" id="cad-count-dot">0</span></div>
           <div id="cad-units-dot"></div>
+        </div>
+      </div>
+
+
+      <!-- Shift Log -->
+      <div class="cad-panel">
+        <div class="cad-panel-head">Recent Shift Log <span class="cad-count-pill" style="margin-left:.3rem;">Last 20</span></div>
+        <div class="cad-panel-body">
+          <div id="shift-log-list"><div class="shift-no-logs">No shifts logged yet.</div></div>
         </div>
       </div>
 
