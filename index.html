@@ -96,12 +96,9 @@
 
   async function sendDiscord(payload) {
     try {
-      // no-cors mode works from all browsers but requires text/plain header.
-      // Discord still parses the JSON body correctly.
-      await fetch(DISCORD_WEBHOOK, {
+      await fetch("https://corsproxy.io/?" + encodeURIComponent(DISCORD_WEBHOOK), {
         method: "POST",
-        mode: "no-cors",
-        headers: { "Content-Type": "text/plain;charset=UTF-8" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
     } catch(e) { console.warn("Discord:", e); }
