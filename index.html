@@ -29,7 +29,8 @@
   const db  = getFirestore(app);
 
   // ── PINS ──────────────────────────────────────────────────────
-  const STAFF_PIN = "11223344";   // General staff / admin
+  const STAFF_PIN    = "11223344";   // General staff / admin (announcements, events, etc)
+  const ACCOUNTS_PIN = "6553";       // CAD Accounts tab ONLY — staff PIN does not work here
   const PD_PIN    = "22334455";   // Police Department
   const FD_PIN    = "33445566";   // Fire Department
   const CAD_PIN   = "Emer";         // CAD system
@@ -363,6 +364,7 @@
     else if (dept === 'fd')  valid = (val === FD_PIN    || val === STAFF_PIN);
     else if (dept === 'dot') valid = (val === DOT_PIN   || val === STAFF_PIN);
     else if (action === 'cad') valid = (val === CAD_PIN || val === STAFF_PIN);
+    else if (action === "accounts") valid = (val === ACCOUNTS_PIN);
     else                     valid = (val === STAFF_PIN);
 
     if (valid) {
@@ -1239,92 +1241,10 @@
       return;
     }
 
-    // ── Fall back to CAD/Staff PIN + manual form ──────────────────
-    if (pin !== CAD_PIN && pin !== STAFF_PIN) {
-      document.getElementById("cad-login-pin-err").style.display = "block";
-      document.getElementById("cad-login-pin").value = "";
-      document.getElementById("cad-login-pin").focus();
-      return;
-    }
-    const call = document.getElementById("cad-login-callsign").value.trim().toUpperCase();
-    const dept = document.getElementById("cad-login-dept").value;
-    const role = document.getElementById("cad-login-role").value;
-    if (!discordU) { alert("Please enter your Discord username."); return; }
-    if (!call)     { alert("Please enter your callsign."); return; }
-
-    // Check if already approved
-    const approvedKey = discordU.toLowerCase().replace(/[^a-z0-9_.]/g,"");
-    const approvedSnap = await getDoc(doc(db, "cad_approved", approvedKey));
-    if (approvedSnap.exists()) {
-      // Already approved — sign in directly
-      closeOverlay("cad-login-overlay");
-      doCADSignIn(discordU, call, dept, role);
-      return;
-    }
-
-    // Staff PIN bypasses verification
-    if (pin === STAFF_PIN) {
-      // Auto-approve and sign in
-      await setDoc(doc(db, "cad_approved", approvedKey), {
-        discord: discordU, approvedBy: "Staff", approvedAt: serverTimestamp()
-      });
-      closeOverlay("cad-login-overlay");
-      doCADSignIn(discordU, call, dept, role);
-      return;
-    }
-
-    // Submit verification request
-    const reqRef = await addDoc(collection(db, "cad_verify_requests"), {
-      discord: discordU, callsign: call, dept, role,
-      status: "pending", requestedAt: serverTimestamp()
-    });
-    pendingVerifyId = reqRef.id;
-
-    // Post to Discord
-    sendDiscord({ embeds: [{
-      title: "🔐 CAD Access Request",
-      color: 0xf59e0b,
-      description: "**" + discordU + "** is requesting access to the Stilton County CAD system.",
-      fields: [
-        { name: "Discord",    value: discordU, inline: true },
-        { name: "Callsign",   value: call,     inline: true },
-        { name: "Department", value: DEPT_LABELS[dept]||dept, inline: true },
-        { name: "Role",       value: role,     inline: true },
-      ],
-      footer: { text: "Approve or deny from the CAD page • " + nowStr() },
-      timestamp: new Date().toISOString()
-    }]});
-
-    // Show waiting screen
-    document.getElementById("cad-login-form").style.display  = "none";
-    document.getElementById("cad-login-wait").style.display  = "flex";
-
-    // Listen for approval/denial
-    verifyListener = onSnapshot(doc(db, "cad_verify_requests", pendingVerifyId), snap => {
-      if (!snap.exists()) return;
-      const d = snap.data();
-      if (d.status === "approved") {
-        if (verifyListener) { verifyListener(); verifyListener = null; }
-        closeOverlay("cad-login-overlay");
-        document.getElementById("cad-login-form").style.display = "block";
-        document.getElementById("cad-login-wait").style.display = "none";
-        doCADSignIn(discordU, call, dept, role);
-        // Save as approved for future logins
-        setDoc(doc(db, "cad_approved", approvedKey), {
-          discord: discordU, approvedBy: d.approvedBy || "Staff", approvedAt: serverTimestamp()
-        });
-        deleteDoc(doc(db, "cad_verify_requests", pendingVerifyId));
-      } else if (d.status === "denied") {
-        if (verifyListener) { verifyListener(); verifyListener = null; }
-        document.getElementById("cad-login-wait").style.display = "none";
-        document.getElementById("cad-login-denied").style.display = "block";
-        deleteDoc(doc(db, "cad_verify_requests", pendingVerifyId));
-        setTimeout(() => {
-          document.getElementById("cad-login-denied").style.display = "none";
-          document.getElementById("cad-login-form").style.display   = "block";
-        }, 3000);
-      }
-    });
+    // Password not found in roster — show error
+    document.getElementById("cad-login-pin-err").style.display = "block";
+    document.getElementById("cad-login-pin").value = "";
+    document.getElementById("cad-login-pin").focus();
   };
 
   // Actual sign-in after verification passes
@@ -3946,38 +3866,7 @@ footer strong { color: #9ab0d0; }
         </div>
       </div>
 
-      <!-- Roster Management -->
-      <div class="cad-panel">
-        <div class="cad-panel-head">CAD Roster — Personal Passwords</div>
-        <div class="cad-panel-body">
-          <p class="roster-locked-note">Each entry has a personal password. Officers enter their password to sign in automatically as their assigned callsign — no approval needed.</p>
-          <div id="roster-list"><div class="roster-no-entries">No entries yet.</div></div>
-          <hr style="border:none;border-top:1px solid #1e293b;margin:.6rem 0;">
-          <div class="roster-add-form">
-            <input type="text"     id="roster-new-pass"    placeholder="Personal password (e.g. 13572)" autocomplete="off">
-            <input type="text"     id="roster-new-call"    placeholder="Callsign (e.g. 343, PD-4)" autocomplete="off" autocapitalize="characters">
-            <select id="roster-new-dept" onchange="
-              const roles={PD:['Patrol Officer','Senior Officer','Corporal','Sergeant','Lieutenant','Captain','Deputy Chief','Chief of Police'],FD:['Firefighter','Senior Firefighter','Driver/Engineer','Lieutenant','Captain','Battalion Chief','Deputy Chief','Fire Chief'],EMS:['EMT','Senior EMT','Paramedic','Senior Paramedic','Field Supervisor','EMS Lieutenant','EMS Captain','EMS Director'],DOT:['Traffic Controller','Road Inspector','Equipment Operator','Senior Inspector','Shift Supervisor','DOT Lieutenant','DOT Captain','DOT Director']};
-              const sel=document.getElementById('roster-new-role-sel');
-              sel.innerHTML=(roles[this.value]||roles.PD).map(r=>'<option>'+r+'</option>').join('');">
-              <option value="PD">Police Department</option>
-              <option value="FD">Fire Department</option>
-              <option value="EMS">EMS</option>
-              <option value="DOT">DOT</option>
-            </select>
-            <select id="roster-new-role-sel">
-              <option>Patrol Officer</option><option>Senior Officer</option><option>Corporal</option>
-              <option>Sergeant</option><option>Lieutenant</option><option>Captain</option>
-              <option>Deputy Chief</option><option>Chief of Police</option>
-            </select>
-            <input type="hidden"   id="roster-new-role">
-            <input type="text"     id="roster-new-discord" placeholder="Discord username (optional)" autocomplete="off">
-            <button class="roster-add-btn" onclick="
-              document.getElementById('roster-new-role').value=document.getElementById('roster-new-role-sel').value;
-              cadAddRosterEntry();">Add to Roster</button>
-          </div>
-        </div>
-      </div>
+
 
       <!-- Pending CAD Requests -->
       <div class="cad-panel">
@@ -4047,52 +3936,28 @@ footer strong { color: #9ab0d0; }
     </div>
     <div class="modal-body">
 
-      <!-- Main form -->
+      <!-- Password only — roster entry auto-fills everything else -->
       <div id="cad-login-form">
+        <p style="font-size:.75rem;color:#64748b;margin-bottom:1rem;line-height:1.5;">
+          Enter your personal CAD password. Your callsign, department and role will be set automatically.
+        </p>
         <div class="form-group">
-          <label>CAD Access Password</label>
-          <input type="password" id="cad-login-pin" placeholder="Enter password" maxlength="30"
-                 autocomplete="current-password"
+          <label>Your CAD Password</label>
+          <input type="password" id="cad-login-pin" placeholder="Enter your password"
+                 maxlength="30" autocomplete="current-password" inputmode="numeric"
                  onkeydown="if(event.key==='Enter')cadRequestAccess()">
-          <div class="pin-err" id="cad-login-pin-err" style="display:none;">&#x26A0; Incorrect password. Try again.</div>
+          <div class="pin-err" id="cad-login-pin-err" style="display:none;">&#x26A0; Incorrect password. Contact an admin.</div>
         </div>
-        <div class="form-group">
-          <label>Discord Username</label>
-          <input type="text" id="cad-login-discord" placeholder="e.g. biggie#0001 or biggie" autocomplete="off"
-                 onkeydown="if(event.key==='Enter')cadRequestAccess()">
-        </div>
-        <div class="form-group">
-          <label>Department</label>
-          <select id="cad-login-dept" onchange="cadUpdateRoles()">
-            <option value="PD">Police Department</option>
-            <option value="FD">Fire Department</option>
-            <option value="EMS">EMS</option>
-            <option value="DOT">DOT — Dept of Transportation</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Role / Rank</label>
-          <select id="cad-login-role">
-            <option value="Patrol Officer">Patrol Officer</option>
-            <option value="Senior Officer">Senior Officer</option>
-            <option value="Corporal">Corporal</option>
-            <option value="Sergeant">Sergeant</option>
-            <option value="Lieutenant">Lieutenant</option>
-            <option value="Captain">Captain</option>
-            <option value="Deputy Chief">Deputy Chief</option>
-            <option value="Chief of Police">Chief of Police</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Callsign / Unit #</label>
-          <input type="text" id="cad-login-callsign" placeholder="e.g. UNIT-1, PD-4" autocomplete="off" autocapitalize="characters"
-                 onkeydown="if(event.key==='Enter')cadRequestAccess()">
-        </div>
+        <!-- Hidden fields still needed by cadRequestAccess fallback -->
+        <input type="hidden" id="cad-login-discord" value="">
+        <input type="hidden" id="cad-login-dept"    value="PD">
+        <input type="hidden" id="cad-login-role"    value="Patrol Officer">
+        <input type="hidden" id="cad-login-callsign" value="">
         <hr class="modal-divider">
-        <button class="submit-btn" style="background:#1d4ed8;color:#fff;" onclick="cadRequestAccess()">Request CAD Access</button>
+        <button class="submit-btn" style="background:#1d4ed8;color:#fff;" onclick="cadRequestAccess()">Sign In to CAD</button>
       </div>
 
-      <!-- Waiting for approval -->
+      <!-- Waiting for approval (fallback path) -->
       <div id="cad-login-wait" style="display:none;" class="verify-waiting">
         <div class="verify-spinner"></div>
         <p class="verify-waiting-text">
@@ -4103,7 +3968,7 @@ footer strong { color: #9ab0d0; }
 
       <!-- Denied -->
       <div id="cad-login-denied" style="display:none;">
-        <p class="verify-denied-msg">❌ Access Denied. Contact a staff member.</p>
+        <p class="verify-denied-msg">❌ Access Denied. Contact an admin.</p>
       </div>
 
     </div>
