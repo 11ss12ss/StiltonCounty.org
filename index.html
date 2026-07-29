@@ -9,288 +9,352 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root{
-    --navy:#232B45;
-    --navy-2:#2E3757;
-    --brass:#9C7A2E;
-    --brass-light:#C7A652;
-    --ink:#1C1B18;
+    --navy:#1B2A4A;
+    --navy-soft:#25375E;
+    --brass:#A67C2E;
+    --brass-soft:#D9B770;
+    --bg:#F7F5EE;
     --paper:#FFFFFF;
-    --muted:#6B6F7D;
+    --line:#E6E1D1;
+    --ink:#1E1E1B;
+    --muted:#6B6A62;
+    --radius:14px;
+    --shadow:0 1px 2px rgba(27,42,74,.05), 0 10px 24px -10px rgba(27,42,74,.16), 0 28px 50px -28px rgba(27,42,74,.22);
     --max:1180px;
   }
   *{margin:0;padding:0;box-sizing:border-box;}
   html{scroll-behavior:smooth;}
-  body{background:var(--paper);color:var(--ink);font-family:'Public Sans',sans-serif;line-height:1.6;}
-  h1,h2,h3,.display{font-family:'Fraunces',serif;font-weight:600;letter-spacing:-0.01em;}
+  body{
+    background-color:var(--bg);
+    background-image:radial-gradient(rgba(27,42,74,.05) 1px, transparent 1px);
+    background-size:22px 22px;
+    color:var(--ink);font-family:'Public Sans',sans-serif;line-height:1.6;
+  }
+  h1,h2,h3,h4,.display{font-family:'Fraunces',serif;font-weight:600;letter-spacing:-.01em;}
   .mono{font-family:'IBM Plex Mono',monospace;}
   a{color:inherit;text-decoration:none;}
+  ul{list-style:none;}
   .wrap{max-width:var(--max);margin:0 auto;padding:0 28px;}
   img,svg{display:block;}
   @media (prefers-reduced-motion: reduce){*{animation:none !important;transition:none !important;}}
 
+  /* ---------- official banner strip ---------- */
+  .gov-banner{background:#EDEAE0;border-bottom:1px solid var(--line);}
+  .gov-banner .wrap{display:flex;align-items:center;justify-content:space-between;padding:8px 28px;font-size:.76rem;color:#4A4A42;}
+  .gov-banner .left{display:flex;align-items:center;gap:8px;}
+  .gov-banner .badge-dot{width:16px;height:16px;border-radius:50%;background:var(--navy);display:flex;align-items:center;justify-content:center;}
+  .gov-banner .badge-dot::after{content:"";width:6px;height:6px;background:var(--brass-soft);border-radius:50%;}
+  .gov-banner a{color:var(--navy);border-bottom:1px solid var(--navy);}
+
   /* ---------- header ---------- */
-  header{position:sticky;top:0;z-index:50;background:var(--navy);border-bottom:1px solid rgba(199,166,82,.35);}
-  .nav{display:flex;align-items:center;justify-content:space-between;padding:14px 28px;max-width:var(--max);margin:0 auto;}
-  .brand{display:flex;align-items:center;gap:14px;color:#fff;}
-  .brand .seal-mini{width:38px;height:38px;flex:0 0 auto;}
+  header{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line);box-shadow:0 2px 16px -4px rgba(27,42,74,.08);}
+  .nav{display:flex;align-items:center;justify-content:space-between;padding:16px 28px;max-width:var(--max);margin:0 auto;}
+  .brand{display:flex;align-items:center;gap:12px;color:var(--navy);}
+  .brand .shield{width:34px;height:34px;flex:0 0 auto;}
   .brand-text{display:flex;flex-direction:column;line-height:1.15;}
-  .brand-text .top{font-family:'Fraunces',serif;font-weight:600;font-size:1.02rem;letter-spacing:.02em;}
-  .brand-text .bottom{font-size:.64rem;letter-spacing:.14em;text-transform:uppercase;color:var(--brass-light);font-family:'IBM Plex Mono',monospace;}
-  nav.links{display:flex;align-items:center;gap:30px;}
-  nav.links a{color:#fff;font-size:.86rem;letter-spacing:.03em;padding:6px 2px;border-bottom:1px solid transparent;transition:border-color .2s ease, color .2s ease;}
-  nav.links a:hover{border-color:var(--brass-light);color:var(--brass-light);}
-  .btn-discord{background:var(--brass);color:#fff !important;padding:9px 18px;border-radius:2px;border:1px solid var(--brass-light);font-size:.82rem;letter-spacing:.04em;text-transform:uppercase;}
-  .btn-discord:hover{background:var(--brass-light);border-color:var(--brass-light);}
-  .navToggle{display:none;background:none;border:1px solid var(--brass-light);color:#fff;padding:8px 12px;font-size:.85rem;letter-spacing:.05em;}
+  .brand-text .top{font-family:'Fraunces',serif;font-weight:600;font-size:1.02rem;}
+  .brand-text .bottom{font-size:.62rem;letter-spacing:.12em;text-transform:uppercase;color:var(--brass);font-family:'IBM Plex Mono',monospace;}
+  nav.links{display:flex;align-items:center;gap:8px;}
+  nav.links a.nl{position:relative;color:var(--navy);font-size:.86rem;padding:8px 12px;}
+  nav.links a.nl::after{content:"";position:absolute;left:12px;right:12px;bottom:4px;height:2px;background:var(--brass);transform:scaleX(0);transform-origin:left;transition:transform .2s ease;}
+  nav.links a.nl:hover::after{transform:scaleX(1);}
+  .btn-discord{background:var(--navy);color:#fff !important;padding:10px 20px;border-radius:999px;font-size:.82rem;letter-spacing:.02em;margin-left:8px;transition:background .2s ease, transform .2s ease;}
+  .btn-discord:hover{background:var(--brass);transform:translateY(-1px);}
+  .navToggle{display:none;background:none;border:1px solid var(--navy);color:var(--navy);padding:8px 12px;font-size:.82rem;border-radius:999px;}
 
-  /* ---------- hero (photo-style, matches reference layout) ---------- */
-  .hero{
+  /* ---------- hero: asymmetric split ---------- */
+  .hero{background:linear-gradient(160deg, var(--navy) 0%, var(--navy-soft) 100%);color:#fff;overflow:hidden;position:relative;}
+  .hero::before{
+    content:"";position:absolute;inset:0;
+    background:radial-gradient(ellipse 60% 55% at 78% 30%, rgba(217,183,112,.16), transparent 70%),
+               radial-gradient(ellipse 50% 60% at 5% 90%, rgba(217,183,112,.08), transparent 70%);
+    pointer-events:none;
+  }
+  .hero-watermark{
+    position:absolute;right:-60px;top:50%;transform:translateY(-50%);
+    width:560px;height:560px;opacity:.05;pointer-events:none;
+  }
+  .hero-grid{max-width:var(--max);margin:0 auto;padding:88px 28px 96px;display:grid;grid-template-columns:1.15fr .85fr;gap:64px;align-items:center;position:relative;z-index:1;}
+  .hero-eyebrow{font-family:'IBM Plex Mono',monospace;font-size:.72rem;letter-spacing:.22em;text-transform:uppercase;color:var(--brass-soft);margin-bottom:18px;display:block;}
+  .hero-grid h1{font-size:clamp(2.2rem,4.4vw,3.4rem);margin-bottom:18px;}
+  .hero-grid p.lead{font-size:1.02rem;color:#CBD1E2;max-width:520px;margin-bottom:30px;}
+  .chip-row{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:34px;}
+  .chip{font-family:'IBM Plex Mono',monospace;font-size:.7rem;letter-spacing:.04em;padding:7px 14px;border:1px solid rgba(217,183,112,.4);border-radius:999px;color:#E7DFC4;}
+  .hero-ctas{display:flex;gap:14px;flex-wrap:wrap;}
+  .btn{padding:14px 26px;font-size:.85rem;letter-spacing:.03em;border-radius:999px;transition:transform .18s ease, background .18s ease, box-shadow .18s ease;display:inline-block;}
+  .btn-primary{background:var(--brass);color:#fff;box-shadow:0 12px 26px -10px rgba(166,124,46,.7);}
+  .btn-primary:hover{background:var(--brass-soft);transform:translateY(-2px);box-shadow:0 16px 32px -10px rgba(166,124,46,.8);}
+  .btn-ghost{border:1px solid rgba(255,255,255,.35);color:#fff;}
+  .btn-ghost:hover{background:rgba(255,255,255,.08);transform:translateY(-2px);}
+
+  .plaque{
+    background:linear-gradient(180deg, #FFFFFF 0%, #FBF9F3 100%);color:var(--ink);
+    border-radius:var(--radius);
+    border:1px solid rgba(255,255,255,.6);
+    box-shadow:0 2px 0 rgba(217,183,112,.5) inset, 0 30px 70px -22px rgba(0,0,0,.55), 0 10px 24px -12px rgba(0,0,0,.35);
+    padding:40px 30px;text-align:center;
     position:relative;
-    min-height:560px;
-    display:flex;align-items:center;justify-content:center;
-    text-align:center;color:#fff;
-    background:
-      linear-gradient(180deg, rgba(20,26,46,.55) 0%, rgba(20,26,46,.72) 55%, rgba(35,43,69,.92) 100%),
-      linear-gradient(160deg, #4B5A82 0%, #2E3450 45%, #171B2C 100%);
-    overflow:hidden;
   }
-  .hero .silhouette{
-    position:absolute;bottom:0;left:0;right:0;height:38%;
-    background:linear-gradient(180deg, transparent, rgba(10,13,24,.65));
-  }
-  .hero-inner{position:relative;max-width:680px;padding:0 28px;}
-  .hero-inner h1{font-size:clamp(2rem,4.4vw,3rem);margin-bottom:14px;color:#fff;}
-  .hero-inner p{font-size:1rem;color:#D8DCE8;max-width:540px;margin:0 auto;}
-  .hero-divider{display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:34px;}
-  .hero-divider .line{width:1px;height:46px;background:rgba(255,255,255,.35);}
-  .hero-divider .dot{width:12px;height:12px;border:1px solid var(--brass-light);border-radius:50%;}
-
-  /* ---------- at a glance bar ---------- */
-  .glance{background:var(--navy-2);color:#fff;padding:48px 0;}
-  .glance-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:40px;}
-  .glance-item{display:flex;gap:16px;align-items:flex-start;}
-  .glance-icon{width:34px;height:34px;flex:0 0 auto;color:var(--brass-light);margin-top:2px;}
-  .glance-copy .headline{display:flex;align-items:baseline;gap:8px;margin-bottom:8px;}
-  .glance-copy .headline .num{font-family:'Fraunces',serif;font-size:1.5rem;color:#fff;}
-  .glance-copy .headline .label{font-size:.82rem;color:var(--brass-light);text-transform:uppercase;letter-spacing:.06em;}
-  .glance-copy p{font-size:.86rem;color:#B9BEDD;}
-  .glance-head{text-align:left;margin-bottom:34px;}
-  .glance-head span{font-family:'IBM Plex Mono',monospace;font-size:.7rem;letter-spacing:.2em;text-transform:uppercase;color:var(--brass-light);}
-  .glance-head h2{font-size:1.5rem;color:#fff;margin-top:8px;}
+  .plaque .shield-big{width:110px;height:110px;margin:0 auto 18px;}
+  .plaque .plaque-title{font-size:1.15rem;color:var(--navy);margin-bottom:4px;}
+  .plaque .plaque-sub{font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;color:var(--brass);}
+  .plaque .plaque-line{margin:20px 0;height:1px;background:var(--line);}
+  .plaque .plaque-motto{font-family:'Fraunces',serif;font-style:italic;font-size:.92rem;color:var(--muted);}
 
   /* ---------- section shell ---------- */
-  section.plain{padding:96px 0;}
-  .section-head{text-align:center;max-width:640px;margin:0 auto 56px;}
-  .section-head .kicker{font-family:'IBM Plex Mono',monospace;font-size:.72rem;letter-spacing:.24em;text-transform:uppercase;color:var(--brass);margin-bottom:12px;display:block;}
-  .section-head h2{font-size:clamp(1.7rem,3vw,2.4rem);color:var(--navy);}
-  .rule{width:60px;height:3px;background:var(--brass);margin:20px auto 0;}
+  section.plain{padding:100px 0;}
+  .section-head{max-width:640px;margin:0 0 52px;}
+  .section-head.center{margin:0 auto 52px;text-align:center;}
+  .section-head .kicker{font-family:'IBM Plex Mono',monospace;font-size:.7rem;letter-spacing:.22em;text-transform:uppercase;color:var(--brass);margin-bottom:12px;display:block;}
+  .section-head h2{font-size:clamp(1.7rem,3vw,2.3rem);color:var(--navy);}
 
-  /* ---------- feature grid (plain, no card borders, matches ref style) ---------- */
-  .feature-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:44px 36px;}
-  .feature{text-align:left;opacity:0;transform:translateY(16px);transition:opacity .6s ease, transform .6s ease;}
-  .feature.reveal{opacity:1;transform:translateY(0);}
-  .feature-icon{width:44px;height:44px;color:var(--brass);margin-bottom:18px;}
-  .feature h3{font-size:1.1rem;color:var(--navy);margin-bottom:8px;}
-  .feature p{font-size:.9rem;color:var(--muted);margin-bottom:10px;}
-  .feature ul{list-style:none;font-size:.85rem;color:#55534A;}
-  .feature li{padding:4px 0;}
-  .feature li::before{content:"— ";color:var(--brass);}
+  /* ---------- departments: bento ---------- */
+  .bento{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;}
+  .bento .feature-card:first-child{grid-column:span 2;}
+  .feature-card{
+    background:var(--paper);border-radius:var(--radius);padding:32px;
+    border:1px solid rgba(230,225,209,.7);
+    box-shadow:var(--shadow);
+    position:relative;
+    opacity:0;transform:translateY(18px);transition:opacity .6s ease, transform .6s ease, box-shadow .2s ease, border-color .2s ease;
+  }
+  .feature-card::before{content:"";position:absolute;top:0;left:24px;right:24px;height:2px;background:linear-gradient(90deg, transparent, var(--brass-soft), transparent);opacity:0;transition:opacity .2s ease;}
+  .feature-card:hover::before{opacity:1;}
+  .feature-card.reveal{opacity:1;transform:translateY(0);}
+  .feature-card:hover{box-shadow:0 2px 4px rgba(27,42,74,.06), 0 22px 40px -14px rgba(27,42,74,.28);border-color:rgba(217,183,112,.4);}
+  .icon-chip{width:46px;height:46px;border-radius:12px;background:var(--navy);display:flex;align-items:center;justify-content:center;color:var(--brass-soft);margin-bottom:20px;}
+  .icon-chip.alt{background:var(--brass);color:#fff;}
+  .feature-card h3{font-size:1.12rem;color:var(--navy);margin-bottom:8px;}
+  .feature-card p{font-size:.9rem;color:var(--muted);margin-bottom:12px;}
+  .feature-card ul{font-size:.85rem;color:#55534A;}
+  .feature-card li{padding:4px 0;}
+  .feature-card li::before{content:"— ";color:var(--brass);}
 
-  /* ---------- media: gallery + articles ---------- */
-  .media-sub{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:10px;}
-  .media-sub h3{font-size:1.15rem;color:var(--navy);}
-  .media-sub span{font-family:'IBM Plex Mono',monospace;font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;color:var(--brass);}
-  .gallery-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-bottom:70px;}
+  /* ---------- media: masonry gallery ---------- */
+  .gallery-cols{column-count:3;column-gap:18px;margin-bottom:70px;}
   .gallery-tile{
-    position:relative;aspect-ratio:4/3;overflow:hidden;
-    background:linear-gradient(150deg,#4B5A82,#2E3450 60%,#171B2C);
-    background-size:cover;background-position:center;
-    display:block;
+    display:block;break-inside:avoid;margin-bottom:18px;border-radius:var(--radius);overflow:hidden;
+    position:relative;background:linear-gradient(150deg,#4B5A82,#2E3450 60%,#171B2C);
+    background-size:cover;background-position:center;box-shadow:var(--shadow);
   }
-  .gallery-tile .cap{
-    position:absolute;left:0;right:0;bottom:0;
-    padding:14px 16px;
-    background:linear-gradient(0deg, rgba(10,13,24,.82), transparent);
-    color:#fff;font-size:.8rem;letter-spacing:.02em;
-  }
-  .gallery-tile:hover .cap{background:linear-gradient(0deg, rgba(156,122,46,.85), transparent);}
-  .article-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:30px;}
-  .article-card{border-top:2px solid var(--brass);padding-top:18px;opacity:0;transform:translateY(16px);transition:opacity .6s ease, transform .6s ease;}
+  .gallery-tile:nth-child(3n+1){aspect-ratio:4/5;}
+  .gallery-tile:nth-child(3n+2){aspect-ratio:4/3;}
+  .gallery-tile:nth-child(3n){aspect-ratio:1/1;}
+  .gallery-tile .cap{position:absolute;left:0;right:0;bottom:0;padding:14px 16px;background:linear-gradient(0deg, rgba(10,13,24,.85), transparent);color:#fff;font-size:.8rem;}
+  .gallery-tile:hover .cap{background:linear-gradient(0deg, rgba(166,124,46,.9), transparent);}
+  .media-sub{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:22px;flex-wrap:wrap;gap:10px;}
+  .media-sub h3{font-size:1.1rem;color:var(--navy);}
+  .media-sub span{font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:var(--brass);}
+  .article-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;}
+  .article-card{background:var(--paper);border-radius:var(--radius);padding:24px;border:1px solid rgba(230,225,209,.7);box-shadow:var(--shadow);opacity:0;transform:translateY(18px);transition:opacity .6s ease, transform .6s ease;}
   .article-card.reveal{opacity:1;transform:translateY(0);}
-  .article-date{font-family:'IBM Plex Mono',monospace;font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--brass);display:block;margin-bottom:8px;}
-  .article-card h4{font-family:'Fraunces',serif;font-size:1.05rem;color:var(--navy);margin-bottom:8px;}
-  .article-card p{font-size:.88rem;color:var(--muted);margin-bottom:12px;}
+  .article-date{font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(--brass);display:block;margin-bottom:8px;}
+  .article-card h4{font-family:'Fraunces',serif;font-size:1.02rem;color:var(--navy);margin-bottom:8px;}
+  .article-card p{font-size:.87rem;color:var(--muted);margin-bottom:12px;}
   .article-card a.read-more{font-size:.8rem;color:var(--brass);border-bottom:1px solid var(--brass);padding-bottom:2px;}
   .article-card a.read-more:hover{color:var(--navy);border-color:var(--navy);}
 
-  /* ---------- how to join ---------- */
-  .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border:1px solid #E7E4DA;}
-  .step{padding:34px 24px;border-right:1px solid #E7E4DA;opacity:0;transform:translateY(16px);transition:opacity .6s ease, transform .6s ease;}
+  /* ---------- how to join: horizontal stepper ---------- */
+  .stepper{position:relative;display:grid;grid-template-columns:repeat(4,1fr);gap:30px;}
+  .stepper::before{content:"";position:absolute;top:23px;left:6%;right:6%;height:1px;background:var(--line);z-index:0;}
+  .step{position:relative;z-index:1;opacity:0;transform:translateY(18px);transition:opacity .6s ease, transform .6s ease;}
   .step.reveal{opacity:1;transform:translateY(0);}
-  .step:last-child{border-right:none;}
-  .step .n{font-family:'Fraunces',serif;font-size:1.8rem;color:var(--brass);display:block;margin-bottom:14px;}
+  .step .n{width:46px;height:46px;border-radius:50%;background:var(--paper);border:2px solid var(--brass);color:var(--navy);font-family:'Fraunces',serif;font-size:1.15rem;display:flex;align-items:center;justify-content:center;margin-bottom:18px;box-shadow:0 0 0 6px var(--bg);}
   .step h3{font-size:1rem;color:var(--navy);margin-bottom:8px;}
   .step p{font-size:.85rem;color:var(--muted);}
 
-  /* ---------- charter ---------- */
-  .charter{background:#F6F4EE;}
-  .charter-doc{background:#fff;max-width:800px;margin:0 auto;padding:52px 56px;border:1px solid #E7E4DA;}
-  .charter-doc h3.doc-title{text-align:center;font-size:1.4rem;color:var(--navy);margin-bottom:6px;}
-  .charter-doc .doc-sub{text-align:center;font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;color:var(--brass);margin-bottom:34px;display:block;}
-  .article{margin-bottom:24px;}
-  .article h4{font-family:'Fraunces',serif;font-size:1rem;color:var(--navy);margin-bottom:6px;}
+  /* ---------- charter: TOC + card ---------- */
+  .charter{background:var(--paper);}
+  .charter-layout{display:grid;grid-template-columns:220px 1fr;gap:50px;}
+  .charter-toc{position:sticky;top:96px;align-self:start;}
+  .charter-toc .mono{font-size:.66rem;letter-spacing:.14em;text-transform:uppercase;color:var(--brass);display:block;margin-bottom:14px;}
+  .charter-toc a{display:block;font-size:.86rem;color:var(--muted);padding:7px 0;border-left:2px solid var(--line);padding-left:14px;transition:color .2s ease, border-color .2s ease;}
+  .charter-toc a:hover{color:var(--navy);border-color:var(--brass);}
+  .charter-doc{background:var(--bg);border-radius:var(--radius);padding:48px;box-shadow:var(--shadow);border:1px solid rgba(230,225,209,.7);position:relative;}
+  .charter-doc::before{content:"";position:absolute;top:0;left:0;right:0;height:4px;border-radius:var(--radius) var(--radius) 0 0;background:linear-gradient(90deg, var(--navy), var(--brass));}
+  .article{margin-bottom:26px;scroll-margin-top:100px;}
+  .article h4{font-family:'Fraunces',serif;font-size:1.05rem;color:var(--navy);margin-bottom:6px;}
   .article h4 span{color:var(--brass);margin-right:8px;}
-  .article p{font-size:.9rem;color:var(--muted);}
-  .doc-sign{margin-top:36px;padding-top:22px;border-top:1px solid #E7E4DA;display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;font-size:.7rem;color:#9A9689;}
+  .article p{font-size:.92rem;color:var(--muted);}
+  .doc-sign{margin-top:34px;padding-top:22px;border-top:1px solid var(--line);display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;font-size:.7rem;color:#9A9689;}
+
+  /* ---------- faq ---------- */
+  .faq-list{max-width:780px;margin:0 auto;display:flex;flex-direction:column;gap:12px;}
+  .faq-item{background:var(--paper);border-radius:var(--radius);border:1px solid rgba(230,225,209,.7);box-shadow:var(--shadow);overflow:hidden;transition:box-shadow .2s ease;}
+  .faq-item:hover{box-shadow:0 2px 4px rgba(27,42,74,.06), 0 20px 36px -14px rgba(27,42,74,.24);}
+  .faq-item summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:20px 24px;font-family:'Fraunces',serif;font-size:1rem;color:var(--navy);}
+  .faq-item summary::-webkit-details-marker{display:none;}
+  .faq-item .icon{flex:0 0 auto;width:22px;height:22px;position:relative;}
+  .faq-item .icon::before,.faq-item .icon::after{content:"";position:absolute;background:var(--brass);transition:transform .2s ease;}
+  .faq-item .icon::before{left:0;top:50%;width:100%;height:2px;transform:translateY(-50%);}
+  .faq-item .icon::after{top:0;left:50%;width:2px;height:100%;transform:translateX(-50%);}
+  .faq-item[open] .icon::after{transform:translateX(-50%) rotate(90deg);opacity:0;}
+  .faq-item p{font-size:.9rem;color:var(--muted);padding:0 24px 22px;}
 
   /* ---------- staff ---------- */
   .staff-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;}
-  .staff-card{text-align:center;padding:26px 16px;opacity:0;transform:translateY(16px);transition:opacity .6s ease, transform .6s ease;}
+  .staff-card{background:var(--paper);border-radius:var(--radius);text-align:center;padding:28px 18px;border:1px solid rgba(230,225,209,.7);box-shadow:var(--shadow);opacity:0;transform:translateY(18px);transition:opacity .6s ease, transform .6s ease;}
   .staff-card.reveal{opacity:1;transform:translateY(0);}
-  .staff-ring{width:58px;height:58px;border-radius:50%;margin:0 auto 14px;border:2px solid var(--brass);display:flex;align-items:center;justify-content:center;font-family:'Fraunces',serif;font-size:1.2rem;color:var(--navy);}
+  .staff-ring{width:58px;height:58px;border-radius:50%;margin:0 auto 14px;background:var(--navy);display:flex;align-items:center;justify-content:center;font-family:'Fraunces',serif;font-size:1.15rem;color:var(--brass-soft);}
   .staff-card h3{font-size:.95rem;color:var(--navy);margin-bottom:4px;}
-  .staff-card .role{font-family:'IBM Plex Mono',monospace;font-size:.66rem;letter-spacing:.08em;text-transform:uppercase;color:var(--brass);}
+  .staff-card .role{font-family:'IBM Plex Mono',monospace;font-size:.65rem;letter-spacing:.08em;text-transform:uppercase;color:var(--brass);}
 
   /* ---------- footer ---------- */
-  footer{background:var(--navy);color:#C6CBDA;padding:52px 0 28px;}
-  .foot-top{display:flex;justify-content:space-between;gap:40px;flex-wrap:wrap;padding-bottom:32px;border-bottom:1px solid rgba(199,166,82,.25);margin-bottom:22px;}
-  .foot-brand{display:flex;gap:16px;max-width:340px;}
-  .foot-brand .seal-mini{width:46px;height:46px;flex:0 0 auto;}
-  .foot-brand h4{font-family:'Fraunces',serif;color:#fff;font-size:1.05rem;margin-bottom:6px;}
+  footer{background:var(--navy);color:#C6CBDA;padding:56px 0 26px;}
+  .foot-top{display:flex;justify-content:space-between;gap:40px;flex-wrap:wrap;padding-bottom:32px;border-bottom:1px solid rgba(217,183,112,.22);margin-bottom:22px;}
+  .foot-brand{display:flex;gap:14px;max-width:340px;}
+  .foot-brand .shield{width:40px;height:40px;flex:0 0 auto;}
+  .foot-brand h4{font-family:'Fraunces',serif;color:#fff;font-size:1.02rem;margin-bottom:6px;}
   .foot-brand p{font-size:.82rem;color:#9EA5BC;}
   .foot-links{display:flex;gap:56px;flex-wrap:wrap;}
-  .foot-col h5{font-family:'IBM Plex Mono',monospace;font-size:.66rem;letter-spacing:.14em;text-transform:uppercase;color:var(--brass-light);margin-bottom:12px;}
+  .foot-col h5{font-family:'IBM Plex Mono',monospace;font-size:.64rem;letter-spacing:.14em;text-transform:uppercase;color:var(--brass-soft);margin-bottom:12px;}
   .foot-col a{display:block;font-size:.84rem;padding:4px 0;color:#C6CBDA;}
-  .foot-col a:hover{color:var(--brass-light);}
-  .foot-bottom{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;font-size:.74rem;color:#8890A6;}
+  .foot-col a:hover{color:var(--brass-soft);}
+  .foot-bottom{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;font-size:.72rem;color:#8890A6;}
 
   /* ---------- responsive ---------- */
-  @media (max-width:920px){
-    .feature-grid{grid-template-columns:repeat(2,1fr);}
-    .steps{grid-template-columns:repeat(2,1fr);}
+  @media (max-width:980px){
+    .hero-grid{grid-template-columns:1fr;gap:48px;}
+    .plaque{max-width:340px;margin:0 auto;}
+    .bento .feature-card:first-child{grid-column:span 2;}
+    .charter-layout{grid-template-columns:1fr;}
+    .charter-toc{position:static;display:flex;flex-wrap:wrap;gap:6px 18px;margin-bottom:26px;}
+    .charter-toc a{border-left:none;border-bottom:2px solid var(--line);padding-left:0;}
+  }
+  @media (max-width:820px){
+    .bento{grid-template-columns:repeat(2,1fr);}
+    .bento .feature-card:first-child{grid-column:span 2;}
+    .stepper{grid-template-columns:repeat(2,1fr);}
+    .stepper::before{display:none;}
     .staff-grid{grid-template-columns:repeat(2,1fr);}
-    .charter-doc{padding:36px 26px;}
-    .gallery-grid,.article-grid{grid-template-columns:repeat(2,1fr);}
+    .gallery-cols{column-count:2;}
+    .article-grid{grid-template-columns:repeat(2,1fr);}
   }
   @media (max-width:720px){
     nav.links{display:none;}
     .navToggle{display:inline-block;}
-    .feature-grid,.steps,.staff-grid,.gallery-grid,.article-grid{grid-template-columns:1fr;}
-    .step{border-right:none;border-bottom:1px solid #E7E4DA;}
+    .bento,.stepper,.staff-grid,.article-grid{grid-template-columns:1fr;}
+    .bento .feature-card:first-child{grid-column:span 1;}
+    .gallery-cols{column-count:1;}
+    .gov-banner .left span:not(.badge-dot){display:none;}
   }
-  :focus-visible{outline:2px solid var(--brass-light);outline-offset:2px;}
+  :focus-visible{outline:2px solid var(--brass);outline-offset:2px;}
 </style>
 </head>
 <body>
 
 <svg width="0" height="0" style="position:absolute">
   <defs>
-    <g id="sealFace">
-      <circle cx="75" cy="75" r="72" fill="#232B45" stroke="#C7A652" stroke-width="2"/>
-      <circle cx="75" cy="75" r="62" fill="none" stroke="#C7A652" stroke-width="1"/>
-      <g fill="none" stroke="#C7A652" stroke-width="1.4" opacity="0.85">
-        <path d="M20,95 A58,58 0 0,1 32,45" />
-        <path d="M130,95 A58,58 0 0,0 118,45" />
-      </g>
-      <g fill="#C7A652" opacity="0.9">
-        <path d="M24,52 l8,-3 l2,9 l-9,2 z"/>
-        <path d="M20,68 l8,-2 l1,9 l-9,1 z"/>
-        <path d="M22,84 l8,-2 l2,8 l-9,2 z"/>
-        <path d="M126,52 l-8,-3 l-2,9 l9,2 z"/>
-        <path d="M130,68 l-8,-2 l-1,9 l9,1 z"/>
-        <path d="M128,84 l-8,-2 l-2,8 l9,2 z"/>
-      </g>
-      <circle cx="75" cy="75" r="4" fill="#C7A652"/>
-      <path d="M75,50 L79,68 L97,68 L82,79 L87,97 L75,86 L63,97 L68,79 L53,68 L71,68 Z" fill="#C7A652" opacity="0.95"/>
-      <path id="topArc" d="M 20 75 A 55 55 0 0 1 130 75" fill="none"/>
-      <path id="botArc" d="M 130 90 A 55 55 0 0 1 20 90" fill="none"/>
-      <text font-family="IBM Plex Mono, monospace" font-size="8.5" letter-spacing="2.5" fill="#F3ECDA">
-        <textPath href="#topArc" startOffset="50%" text-anchor="middle">STILTON COUNTY</textPath>
-      </text>
-      <text font-family="IBM Plex Mono, monospace" font-size="8.5" letter-spacing="2.5" fill="#F3ECDA">
-        <textPath href="#botArc" startOffset="50%" text-anchor="middle">ROLEPLAY · EST. 2021</textPath>
-      </text>
+    <g id="shieldFace">
+      <path d="M50 4 L92 16 V50 C92 76 74 92 50 100 C26 92 8 76 8 50 V16 Z" fill="#1B2A4A" stroke="#D9B770" stroke-width="2.5"/>
+      <path d="M50 14 L84 24 V50 C84 70 69 84 50 91 C31 84 16 70 16 50 V24 Z" fill="none" stroke="#D9B770" stroke-width="1"/>
+      <path d="M50 32 L54 46 L69 46 L57 55 L61 69 L50 60 L39 69 L43 55 L31 46 L46 46 Z" fill="#D9B770"/>
     </g>
   </defs>
 </svg>
 
+<div class="gov-banner">
+  <div class="wrap">
+    <div class="left">
+      <span class="badge-dot"></span>
+      <span>An official community site of Stilton County Roleplay — Brick Rigs</span>
+    </div>
+    <a href="https://discord.gg/rGg3cGc77y" target="_blank" rel="noopener">Server Discord ↗</a>
+  </div>
+</div>
+
 <header>
   <div class="nav">
     <a class="brand" href="#top">
-      <svg class="seal-mini" viewBox="0 0 150 150"><use href="#sealFace"/></svg>
+      <svg class="shield" viewBox="0 0 100 100"><use href="#shieldFace"/></svg>
       <span class="brand-text">
         <span class="top">Stilton County</span>
         <span class="bottom">Roleplay · Brick Rigs</span>
       </span>
     </a>
     <nav class="links">
-      <a href="#departments">Departments</a>
-      <a href="#media">Media</a>
-      <a href="#join">How to Join</a>
-      <a href="#charter">Charter</a>
-      <a href="#staff">Staff</a>
+      <a class="nl" href="#departments">Departments</a>
+      <a class="nl" href="#media">Media</a>
+      <a class="nl" href="#join">How to Join</a>
+      <a class="nl" href="#charter">Charter</a>
+      <a class="nl" href="#faq">FAQ</a>
+      <a class="nl" href="#staff">Staff</a>
       <a class="btn-discord" href="https://discord.gg/rGg3cGc77y" target="_blank" rel="noopener">Join Discord</a>
     </nav>
     <button class="navToggle" aria-label="Menu">MENU</button>
   </div>
 </header>
 
-<!-- ============ HERO (photo-style, centered title/subtitle, divider) ============ -->
+<!-- ============ HERO ============ -->
 <section class="hero" id="top">
-  <div class="silhouette"></div>
-  <div class="hero-inner">
-    <h1 class="display">Stilton County Roleplay</h1>
-    <p>A realistic, department-driven Brick Rigs roleplay county. Patrol the highways, answer the dispatch, run the courthouse, or make an honest living as a citizen.</p>
-    <div class="hero-divider">
-      <div class="line"></div>
-      <div class="dot"></div>
+  <svg class="hero-watermark" viewBox="0 0 100 100"><use href="#shieldFace"/></svg>
+  <div class="hero-grid">
+    <div>
+      <span class="hero-eyebrow">Charter No. SC-2026-001</span>
+      <h1 class="display">Stilton County Roleplay</h1>
+      <p class="lead">A realistic, department-driven Brick Rigs roleplay county. Patrol the highways, answer the dispatch, run the courthouse, or make an honest living as a citizen.</p>
+      <div class="chip-row">
+        <span class="chip">Est. 2026</span>
+        <span class="chip">Whitelisted Server</span>
+        <span class="chip">Brick Rigs</span>
+      </div>
+      <div class="hero-ctas">
+        <a class="btn btn-primary" href="https://discord.gg/rGg3cGc77y" target="_blank" rel="noopener">Join the Discord</a>
+        <a class="btn btn-ghost" href="#charter">Read the Charter</a>
+      </div>
+    </div>
+    <div class="plaque">
+      <svg class="shield-big" viewBox="0 0 100 100"><use href="#shieldFace"/></svg>
+      <div class="plaque-title display">County of Stilton</div>
+      <span class="plaque-sub">Chartered 2026</span>
+      <div class="plaque-line"></div>
+      <p class="plaque-motto">"Built brick by brick, governed in good faith."</p>
     </div>
   </div>
 </section>
 
-<!-- ============ DEPARTMENTS (plain feature grid) ============ -->
+<!-- ============ DEPARTMENTS ============ -->
 <section class="plain" id="departments">
   <div class="wrap">
-    <div class="section-head">
+    <div class="section-head center">
       <span class="kicker">County Divisions</span>
       <h2 class="display">Departments of Stilton County</h2>
-      <div class="rule"></div>
     </div>
-    <div class="feature-grid">
+    <div class="bento">
 
-      <div class="feature">
-        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M12 2v6M12 8c3 2 4 5 2 8-1 1.5-3 2-4 2s-3-.5-4-2c-2-3-1-6 2-8"/></svg>
+      <div class="feature-card">
+        <div class="icon-chip"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2v6M12 8c3 2 4 5 2 8-1 1.5-3 2-4 2s-3-.5-4-2c-2-3-1-6 2-8"/></svg></div>
         <h3>Fire &amp; Rescue</h3>
         <p>Responds to structure fires, vehicle collisions, and medical emergencies throughout the county.</p>
         <ul><li>Engine &amp; Rescue companies</li><li>EMS response teams</li><li>Live training academy</li></ul>
       </div>
 
-      <div class="feature">
-        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="7" width="18" height="12" rx="1"/><path d="M7 7V5a2 2 0 012-2h6a2 2 0 012 2v2"/></svg>
+      <div class="feature-card">
+        <div class="icon-chip alt"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="7" width="18" height="12" rx="1"/><path d="M7 7V5a2 2 0 012-2h6a2 2 0 012 2v2"/></svg></div>
         <h3>County Clerk &amp; DMV</h3>
         <p>Handles vehicle registration, driver's licensing, and public records for every resident.</p>
-        <ul><li>License &amp; plate issuance</li><li>Business permits</li><li>Civil records office</li></ul>
+        <ul><li>License &amp; plate issuance</li><li>Business permits</li></ul>
       </div>
 
-      <div class="feature">
-        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 20V10l8-6 8 6v10"/><path d="M9 20v-6h6v6"/></svg>
+      <div class="feature-card">
+        <div class="icon-chip"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 20V10l8-6 8 6v10"/><path d="M9 20v-6h6v6"/></svg></div>
         <h3>Public Works &amp; DOT</h3>
         <p>Maintains the county's roads, signage, and public infrastructure — and keeps the builds honest.</p>
-        <ul><li>Road crews &amp; inspection</li><li>Vehicle build compliance</li><li>Municipal projects</li></ul>
+        <ul><li>Road crews &amp; inspection</li><li>Vehicle build compliance</li></ul>
       </div>
 
-      <div class="feature">
-        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="4" y="4" width="16" height="16" rx="1"/><path d="M9 4v16M4 9h5"/></svg>
+      <div class="feature-card">
+        <div class="icon-chip alt"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="16" height="16" rx="1"/><path d="M9 4v16M4 9h5"/></svg></div>
         <h3>District Courthouse</h3>
         <p>Presides over citations, civil disputes, and formal hearings brought before the county.</p>
-        <ul><li>Judges &amp; public defenders</li><li>Scheduled court sessions</li><li>Appeals process</li></ul>
+        <ul><li>Judges &amp; public defenders</li><li>Scheduled court sessions</li></ul>
       </div>
 
-      <div class="feature">
-        <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="12" cy="8" r="3.4"/><path d="M5 20c0-4 3-6 7-6s7 2 7 6"/></svg>
+      <div class="feature-card">
+        <div class="icon-chip"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="8" r="3.4"/><path d="M5 20c0-4 3-6 7-6s7 2 7 6"/></svg></div>
         <h3>Civilian Life</h3>
         <p>No badge required — run a business, drive for hire, or just live out a quiet life in the county.</p>
-        <ul><li>Player-owned businesses</li><li>Freelance trucking &amp; taxi</li><li>Property &amp; housing RP</li></ul>
+        <ul><li>Player-owned businesses</li><li>Freelance trucking &amp; taxi</li></ul>
       </div>
 
     </div>
@@ -298,38 +362,25 @@
 </section>
 
 <!-- ============ MEDIA ============ -->
-<section class="plain" id="media" style="background:#F9F7F1;border-top:1px solid #E7E4DA;border-bottom:1px solid #E7E4DA;">
+<section class="plain" id="media" style="background:var(--paper);border-top:1px solid var(--line);border-bottom:1px solid var(--line);">
   <div class="wrap">
-    <div class="section-head">
+    <div class="section-head center">
       <span class="kicker">From Our Channels</span>
       <h2 class="display">Media &amp; Articles</h2>
-      <div class="rule"></div>
     </div>
 
     <div class="media-sub">
       <h3>Server Gallery</h3>
       <span>Latest Screenshots</span>
     </div>
-    <div class="gallery-grid">
+    <div class="gallery-cols">
       <!-- Replace each background-image url() below with a real screenshot link from your media channel -->
-      <a class="gallery-tile" href="#" target="_blank" rel="noopener" style="background-image:url('');">
-        <span class="cap">County highway patrol, mile marker 12</span>
-      </a>
-      <a class="gallery-tile" href="#" target="_blank" rel="noopener" style="background-image:url('');">
-        <span class="cap">Engine 4 responding downtown</span>
-      </a>
-      <a class="gallery-tile" href="#" target="_blank" rel="noopener" style="background-image:url('');">
-        <span class="cap">Courthouse session in progress</span>
-      </a>
-      <a class="gallery-tile" href="#" target="_blank" rel="noopener" style="background-image:url('');">
-        <span class="cap">DMV counter, new plate issued</span>
-      </a>
-      <a class="gallery-tile" href="#" target="_blank" rel="noopener" style="background-image:url('');">
-        <span class="cap">Road crew on Route 9</span>
-      </a>
-      <a class="gallery-tile" href="#" target="_blank" rel="noopener" style="background-image:url('');">
-        <span class="cap">Sunset over the county line</span>
-      </a>
+      <a class="gallery-tile" href="#" target="_blank" rel="noopener" style="background-image:url('');"><span class="cap">County highway patrol, mile marker 12</span></a>
+      <a class="gallery-tile" href="#" target="_blank" rel="noopener" style="background-image:url('');"><span class="cap">Engine 4 responding downtown</span></a>
+      <a class="gallery-tile" href="#" target="_blank" rel="noopener" style="background-image:url('');"><span class="cap">Courthouse session in progress</span></a>
+      <a class="gallery-tile" href="#" target="_blank" rel="noopener" style="background-image:url('');"><span class="cap">DMV counter, new plate issued</span></a>
+      <a class="gallery-tile" href="#" target="_blank" rel="noopener" style="background-image:url('');"><span class="cap">Road crew on Route 9</span></a>
+      <a class="gallery-tile" href="#" target="_blank" rel="noopener" style="background-image:url('');"><span class="cap">Sunset over the county line</span></a>
     </div>
 
     <div class="media-sub">
@@ -360,14 +411,13 @@
 </section>
 
 <!-- ============ HOW TO JOIN ============ -->
-<section class="plain" id="join" style="background:#F9F7F1;border-top:1px solid #E7E4DA;border-bottom:1px solid #E7E4DA;">
+<section class="plain" id="join">
   <div class="wrap">
-    <div class="section-head">
+    <div class="section-head center">
       <span class="kicker">Processing New Residents</span>
       <h2 class="display">How to Join the County</h2>
-      <div class="rule"></div>
     </div>
-    <div class="steps">
+    <div class="stepper">
       <div class="step"><span class="n">01</span><h3>Enter the Discord</h3><p>All new residents check in through the county Discord before setting foot in the server.</p></div>
       <div class="step"><span class="n">02</span><h3>Read the Charter</h3><p>Review the county charter below — every deputy, medic, and civilian is expected to know it.</p></div>
       <div class="step"><span class="n">03</span><h3>Submit an Application</h3><p>Apply for whitelist and, if you're after a badge, a department of your choosing.</p></div>
@@ -379,26 +429,68 @@
 <!-- ============ CHARTER ============ -->
 <section class="plain charter" id="charter">
   <div class="wrap">
-    <div class="section-head">
+    <div class="section-head center">
       <span class="kicker">Governing Document</span>
       <h2 class="display">The Stilton County Charter</h2>
-      <div class="rule"></div>
     </div>
-    <div class="charter-doc">
-      <h3 class="doc-title display">Charter of Stilton County</h3>
-      <span class="doc-sub">Ratified 2021 · Binding on All Residents</span>
-
-      <div class="article"><h4><span>Art. I</span>Realism &amp; Roleplay Quality</h4><p>All actions taken in the county are expected to reflect genuine roleplay. Driving, radio calls, and character conduct should hold up to the standard of the department or role you represent.</p></div>
-      <div class="article"><h4><span>Art. II</span>Vehicle Build Standards</h4><p>Builds must be reasonably proportioned and street-legal in appearance. Public Works &amp; DOT may deny plates to vehicles built for exploits rather than realism.</p></div>
-      <div class="article"><h4><span>Art. III</span>Fear &amp; Value of Life</h4><p>Residents are expected to value their character's life and safety appropriately, and to respond to danger the way a real person would.</p></div>
-      <div class="article"><h4><span>Art. IV</span>Chain of Command</h4><p>Department members follow their chain of command. Disputes are raised through supervisors, not in open radio chatter.</p></div>
-      <div class="article"><h4><span>Art. V</span>Conduct Outside Character</h4><p>Out-of-character disagreements stay out of character. Harassment, discrimination, and metagaming are not tolerated in any part of the county.</p></div>
-      <div class="article"><h4><span>Art. VI</span>Amendments</h4><p>This charter may be amended by county leadership. Residents are responsible for staying current with the version posted in the Discord.</p></div>
-
-      <div class="doc-sign">
-        <span>FILED — STILTON COUNTY CLERK'S OFFICE</span>
-        <span>DOC. NO. SC-2021-001</span>
+    <div class="charter-layout">
+      <div class="charter-toc">
+        <span class="mono">On This Page</span>
+        <a href="#art1">Art. I — Realism</a>
+        <a href="#art2">Art. II — Vehicle Standards</a>
+        <a href="#art3">Art. III — Value of Life</a>
+        <a href="#art4">Art. IV — Chain of Command</a>
+        <a href="#art5">Art. V — Conduct</a>
+        <a href="#art6">Art. VI — Amendments</a>
       </div>
+      <div class="charter-doc">
+        <div class="article" id="art1"><h4><span>Art. I</span>Realism &amp; Roleplay Quality</h4><p>All actions taken in the county are expected to reflect genuine roleplay. Driving, radio calls, and character conduct should hold up to the standard of the department or role you represent.</p></div>
+        <div class="article" id="art2"><h4><span>Art. II</span>Vehicle Build Standards</h4><p>Builds must be reasonably proportioned and street-legal in appearance. Public Works &amp; DOT may deny plates to vehicles built for exploits rather than realism.</p></div>
+        <div class="article" id="art3"><h4><span>Art. III</span>Fear &amp; Value of Life</h4><p>Residents are expected to value their character's life and safety appropriately, and to respond to danger the way a real person would.</p></div>
+        <div class="article" id="art4"><h4><span>Art. IV</span>Chain of Command</h4><p>Department members follow their chain of command. Disputes are raised through supervisors, not in open radio chatter.</p></div>
+        <div class="article" id="art5"><h4><span>Art. V</span>Conduct Outside Character</h4><p>Out-of-character disagreements stay out of character. Harassment, discrimination, and metagaming are not tolerated in any part of the county.</p></div>
+        <div class="article" id="art6"><h4><span>Art. VI</span>Amendments</h4><p>This charter may be amended by county leadership. Residents are responsible for staying current with the version posted in the Discord.</p></div>
+        <div class="doc-sign">
+          <span>FILED — STILTON COUNTY CLERK'S OFFICE</span>
+          <span>DOC. NO. SC-2026-001</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FAQ ============ -->
+<section class="plain" id="faq" style="background:var(--paper);border-top:1px solid var(--line);border-bottom:1px solid var(--line);">
+  <div class="wrap">
+    <div class="section-head center">
+      <span class="kicker">Before You Ask in Discord</span>
+      <h2 class="display">Frequently Asked Questions</h2>
+    </div>
+    <div class="faq-list">
+      <details class="faq-item" open>
+        <summary>Do I need to apply before I can join the server?<span class="icon"></span></summary>
+        <p>Yes. All residents go through Discord whitelisting before connecting. If you also want a department badge, that's a separate application handled by that department's leadership.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Can I switch departments after I've joined one?<span class="icon"></span></summary>
+        <p>You can. Submit a transfer request through the new department's application process — there's no cooldown, but active disciplinary cases must be resolved first.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Can I use my own custom-built vehicle?<span class="icon"></span></summary>
+        <p>Yes, as long as it meets the build standards in Article II of the Charter. Public Works &amp; DOT inspects new builds before issuing plates for department or civilian use.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Is there an age requirement to join?<span class="icon"></span></summary>
+        <p>We ask that residents be at least 13, in line with Discord's own age requirement. Department roles involving more mature scenarios may set a higher minimum.</p>
+      </details>
+      <details class="faq-item">
+        <summary>How do I report a rule-breaker or appeal a ban?<span class="icon"></span></summary>
+        <p>Open a support ticket in the Discord. Include screenshots or clip evidence where possible — reports and appeals are both reviewed by county leadership, not the department involved.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Does the server ever wipe or reset progress?<span class="icon"></span></summary>
+        <p>Ranks, licenses, and property are persistent and not wiped without advance notice posted in the Discord and on this site.</p>
+      </details>
     </div>
   </div>
 </section>
@@ -406,10 +498,9 @@
 <!-- ============ STAFF ============ -->
 <section class="plain" id="staff">
   <div class="wrap">
-    <div class="section-head">
+    <div class="section-head center">
       <span class="kicker">County Leadership</span>
       <h2 class="display">Elected &amp; Appointed Staff</h2>
-      <div class="rule"></div>
     </div>
     <div class="staff-grid">
       <div class="staff-card"><div class="staff-ring">SC</div><h3>County Sheriff</h3><span class="role">Law Enforcement Lead</span></div>
@@ -424,7 +515,7 @@
   <div class="wrap">
     <div class="foot-top">
       <div class="foot-brand">
-        <svg class="seal-mini" viewBox="0 0 150 150"><use href="#sealFace"/></svg>
+        <svg class="shield" viewBox="0 0 100 100"><use href="#shieldFace"/></svg>
         <div>
           <h4 class="display">Stilton County Roleplay</h4>
           <p>An independent Brick Rigs roleplay community. Not affiliated with, endorsed by, or sponsored by Brick Rigs or the LEGO Group.</p>
@@ -436,6 +527,7 @@
           <a href="#departments">Departments</a>
           <a href="#join">How to Join</a>
           <a href="#charter">Charter</a>
+          <a href="#faq">FAQ</a>
           <a href="#staff">Staff</a>
         </div>
         <div class="foot-col">
@@ -447,14 +539,14 @@
       </div>
     </div>
     <div class="foot-bottom">
-      <span>© 2021–2026 Stilton County Roleplay. All rights reserved.</span>
+      <span>© 2026 Stilton County Roleplay. All rights reserved.</span>
       <span class="mono">DOC. NO. SC-HOME-001</span>
     </div>
   </div>
 </footer>
 
 <script>
-  const revealEls = document.querySelectorAll('.feature, .step, .staff-card, .article-card');
+  const revealEls = document.querySelectorAll('.feature-card, .step, .staff-card, .article-card');
   const io = new IntersectionObserver((entries)=>{
     entries.forEach(e=>{ if(e.isIntersecting){ e.target.classList.add('reveal'); io.unobserve(e.target); } });
   },{threshold:0.15});
@@ -468,12 +560,13 @@
       links.style.display = open ? 'none' : 'flex';
       links.style.flexDirection = 'column';
       links.style.position = 'absolute';
-      links.style.top = '62px';
+      links.style.top = '64px';
       links.style.left = '0';
       links.style.right = '0';
-      links.style.background = 'var(--navy)';
-      links.style.padding = '20px 28px';
-      links.style.gap = '16px';
+      links.style.background = 'var(--paper)';
+      links.style.padding = '14px 28px 20px';
+      links.style.gap = '4px';
+      links.style.borderBottom = '1px solid var(--line)';
     });
   }
 </script>
