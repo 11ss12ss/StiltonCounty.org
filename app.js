@@ -43,8 +43,8 @@ function home(){
    <p class="mu">Est Jan 2026 &bull; “United in governance, Freedom in communities”</p>
    <p><button class="btn" onclick="go('chains')">Explore Chain Servers</button> ${safeUrl(CFG.JOIN_URL)?`<a class="btn s" href="${esc(safeUrl(CFG.JOIN_URL))}" target="_blank" rel="noopener noreferrer">Join the Discord</a>`:''}</p></div>
 
-   <div class="card sec"><h3>What ROS Is</h3>
-    <p>The Republic of Stilton (ROS) is, at its core, a roleplay server where you get to choose your path. In ROS there are many paths you can take such as:</p>
+   <div class="card sec"><h3>What ROS Is.</h3>
+    <p>The Republic of Stilton (ROS) is, at its core, is a roleplay server where you get to choose your path. In ROS there are many paths you can take such as:</p>
     <ul><li>Becoming a first responder</li><li>Run large scale businesses</li><li>Live a life of crime</li><li>Run for public office</li></ul><p>And much more.</p></div>
 
    <div class="card sec"><h3>Roleplay</h3>
