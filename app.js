@@ -168,3 +168,4 @@ function save(){if(!S.user)return;if($('#f_plate'))draft.form=form();draft.tab=t
   db.collection('prefs').doc(S.user.id).set({json:JSON.stringify(draft),updated:Date.now()}).catch(()=>{})}
 addEventListener('pagehide',save);document.addEventListener('visibilitychange',()=>document.hidden&&save());setInterval(save,15000);
 init();
+
