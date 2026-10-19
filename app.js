@@ -4,17 +4,21 @@ const CFG={DISCORD_CLIENT_ID:'1542247332899455006',GUILD_ID:'1462548365907722252
 firebase.initializeApp({apiKey:"AIzaSyAtjPX7727zNlvBh85jzTeAqPs5LfvuYr0",authDomain:"rossite.firebaseapp.com",projectId:"rossite",storageBucket:"rossite.firebasestorage.app",messagingSenderId:"812413188846",appId:"1:812413188846:web:a3e3d7e65697ff290c91ff"});
 const db=firebase.firestore();
 // ==================
-const $=s=>document.querySelector(s),
-esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),
+const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),
 safeId=s=>/^[A-Za-z0-9_-]+$/.test(String(s??''))?String(s):'';
 let S={user:null,staff:false},tab='home',draft={};
 const LOADER=n=>`<div class="loader"><span class="spin"></span><span>Loading…</span></div>`+(n?`<div class="cgrid">${'<div class="skel"></div>'.repeat(n)}</div>`:'');
 const say=t=>{const m=$('#msg');m.textContent=t;m.classList.toggle('hide',!t)};
 const fe=e=>e&&e.code==='permission-denied'?'Firestore blocked this. Paste the rules into Firebase Console > Firestore > Rules and press Publish.':(e&&e.message)||'Database error';
 const dc=async(p,t)=>{const r=await fetch('https://discord.com/api/v10'+p,{headers:{Authorization:'Bearer '+t}});if(!r.ok)throw new Error(r.status);return r.json()};
-const loginUrl=()=>'https://discord.com/oauth2/authorize?'+new URLSearchParams({client_id:CFG.DISCORD_CLIENT_ID,response_type:'token',scope:'identify guilds.members.read',redirect_uri:location.origin+location.pathname+location.search});
+const oState=()=>{try{let s=sessionStorage.getItem('ros_st');if(!s){s=[...crypto.getRandomValues(new Uint8Array(16))].map(x=>x.toString(16).padStart(2,'0')).join('');sessionStorage.setItem('ros_st',s)}return s}catch{return ''}};
+const loginUrl=()=>'https://discord.com/oauth2/authorize?'+new URLSearchParams({client_id:CFG.DISCORD_CLIENT_ID,response_type:'token',scope:'identify guilds.members.read',redirect_uri:location.origin+location.pathname+location.search,state:oState()});
 function token(){const h=new URLSearchParams(location.hash.slice(1));
-  if(h.get('access_token')){localStorage.setItem('rp_tok',JSON.stringify({t:h.get('access_token'),exp:Date.now()+h.get('expires_in')*1000}));history.replaceState(null,'',location.pathname+location.search)}
+  if(h.get('access_token')){
+    let want='';try{want=sessionStorage.getItem('ros_st')||''}catch{}
+    // only accept a token we asked for: a link crafted by someone else cannot log you in as them
+    if(want&&h.get('state')===want){localStorage.setItem('rp_tok',JSON.stringify({t:h.get('access_token'),exp:Date.now()+h.get('expires_in')*1000}));try{sessionStorage.removeItem('ros_st')}catch{}}
+    history.replaceState(null,'',location.pathname+location.search)}
   const a=JSON.parse(localStorage.getItem('rp_tok')||'null');return a&&a.exp>Date.now()?a.t:null}
 function logout(){localStorage.removeItem('rp_tok');location.reload()}
 // ===== device identity (used for device / hardware bans) =====
@@ -69,8 +73,7 @@ async function init(){
       S.user={id:u.id,name:m.nick||u.global_name||u.username,avatar:u.avatar?`https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png`:null};
       S.staff=r.includes(CFG.STAFF_ROLE_ID);
       draft=JSON.parse(localStorage.getItem('rp_draft_'+u.id)||'{}');
-      try{const p=await db.collection('prefs').doc(u.id).get();if(p.exists)draft=JSON.parse(p.data().json)}catch{}
-      tab=draft.tab||tab;
+      tab=['home','chains','terms','mod'].includes(draft.tab)?draft.tab:tab;
       db.collection('devices').doc(u.id).set({ids:firebase.firestore.FieldValue.arrayUnion('v:'+DEV.v,'f:'+DEV.f),name:S.user.name.slice(0,80),updated:Date.now()},{merge:true}).catch(()=>{}); // lets staff ban this person's devices too
     }catch{localStorage.removeItem('rp_tok');say('You must be a member of our Discord server to log in.')}}
   render();
@@ -146,15 +149,17 @@ function home(){
     <p class="mu"><i>United in governance, Freedom in communities.</i></p></div>`;
 }
 
-const pin=()=>{try{return sessionStorage.getItem('ros_pin')||''}catch{return ''}};
+let PIN='';const pin=()=>PIN;
 // Staff actions are checked by the database rules: the staff PIN must be sent along with the change.
 async function staffWrite(id,fn){
-  const p=($('#b_pin')&&$('#b_pin').value)||pin();
+  let p=($('#b_pin')&&$('#b_pin').value)||PIN;
+  if(!p)p=prompt('Staff PIN')||'';
   if(!p)throw new Error('Enter the staff PIN first');
-  try{sessionStorage.setItem('ros_pin',p)}catch{}
+  PIN=p;
+  await db.collection('proofs').doc(id).delete().catch(()=>{}); // remove any leftover proof so it cannot be reused
   const b=db.batch();b.set(db.collection('proofs').doc(id),{pin:p});fn(b);
   try{await b.commit()}
-  catch(e){if(e&&e.code==='permission-denied')throw new Error('Staff PIN rejected. Check the PIN, and that the newest Firestore rules are published.');throw e}
+  catch(e){if(e&&e.code==='permission-denied'){PIN='';throw new Error('Staff PIN rejected. Check the PIN, and that the newest Firestore rules are published.')}throw e}
   finally{db.collection('proofs').doc(id).delete().catch(()=>{})}
 }
 async function mod(){
@@ -175,7 +180,7 @@ async function doBan(){
   if(id===S.user.id)return say('You cannot ban yourself');
   if(!confirm('Ban '+id+' from the site?'))return;
   try{let ids=[],name='';
-    try{const d=await db.collection('devices').doc(id).get();if(d.exists){name=String(d.data().name||'');ids=(d.data().ids||[]).filter(v=>$('#b_fp').checked||!String(v).startsWith('f:')).slice(0,12)}}catch{}
+    try{const d=await db.collection('devices').doc(id).get();if(d.exists){name=String(d.data().name||'');ids=(d.data().ids||[]).filter(v=>$('#b_fp').checked||!String(v).startsWith('f:')).slice(0,20)}}catch{}
     await staffWrite('u_'+id,b=>b.set(db.collection('bans').doc('u_'+id),{type:'user',user_id:id,name:name.slice(0,80),reason:$('#b_reason').value.trim().slice(0,200),by:S.user.id,by_name:S.user.name.slice(0,80),created:Date.now(),devices:ids}));
     say('Banned. '+ids.length+' known device(s) also banned.');mod()}catch(e){say(e.message||fe(e))}}
 async function doUnban(id){if(!confirm('Unban '+id+'?'))return;
@@ -194,7 +199,7 @@ async function chains(){
     ${mode!='pub'?`<p class="mu">Submitted by ${esc(x.submitted_name||'unknown')} &bull; Status when open: ${esc(x.status)}${u&&S.staff?` &bull; <a href="${esc(u)}" target="_blank" rel="noopener noreferrer">invite</a>`:''}</p>`:''}
     <p>${mode=='pub'?(u?`<a class="btn" href="${esc(u)}" target="_blank" rel="noopener noreferrer">Join this server</a>`:'<span class="mu">No invite link yet</span>')+(S.staff?` <button class="btn s" onclick="delChain('${safeId(x.id)}')">Remove</button>`:''):''}
     ${mode=='staff'?`<button class="btn" onclick="review('${safeId(x.id)}','accepted')">Accept</button> <button class="btn s" onclick="review('${safeId(x.id)}','denied')">Deny</button>${x.review=='denied'?` <button class="btn s" onclick="delChain('${safeId(x.id)}')">Delete</button>`:''}`:''}
-    ${mode=='mine'?`<button class="btn" disabled style="opacity:.6;cursor:not-allowed">${x.review=='denied'?'Denied':'Awaiting approval'}</button> <button class="btn s" onclick="delChain('${safeId(x.id)}')">Withdraw</button>`:''}</p></div>`};
+    ${mode=='mine'?`<button class="btn" disabled style="opacity:.6;cursor:not-allowed">${x.review=='denied'?'Denied':'Awaiting approval'}</button>`:''}</p></div>`};
   $('#view').innerHTML=`<div class="card"><h2>Chain Servers</h2><p class="mu">Every city in the Republic of Stilton. Each one has its own local laws, and StiltonBux works in all of them. New chain servers are listed once staff accept them.</p></div>
    <div class="cgrid">${ok.map(x=>card(x,'pub')).join('')||'<div class="card"><p class="mu">No chain servers listed yet.</p></div>'}</div>
    ${S.staff?`<div class="card"><h3>Pending applications (${pending.length})</h3></div><div class="cgrid">${pending.map(x=>card(x,'staff')).join('')||'<div class="card"><p class="mu">Nothing waiting for review.</p></div>'}</div>
@@ -216,20 +221,17 @@ async function addChain(){
     if(!S.staff){const open=(await db.collection('chains').where('submitted_by','==',S.user.id).get()).docs.filter(d=>d.data().review==='pending').length;
       if(open>=3)return say('You already have 3 applications waiting. Please wait for staff to review them.')}
     const ref=await db.collection('chains').add({name:name.slice(0,60),city:$('#c_city').value.trim().slice(0,60),description:desc.slice(0,600),invite:inv?safeUrl(inv):'',status:$('#c_status').value,review:'pending',submitted_by:S.user.id,submitted_name:S.user.name.slice(0,80),created:Date.now()});
-    if(S.staff){await ref.update({review:'accepted',reviewed_by:S.user.id});say('Chain server added.')}
+    if(S.staff){await staffWrite('c_'+ref.id,b=>b.update(ref,{review:'accepted',reviewed_by:S.user.id}));say('Chain server added.')}
     else say('Submitted! Staff will review it soon.');
     chains()}catch(e){say(fe(e))}}
 async function review(id,r){if(!S.staff)return;
-  try{await db.collection('chains').doc(id).update({review:r,reviewed_by:S.user.id});say(r=='accepted'?'Accepted. It is now listed.':'Denied.');chains()}catch(e){say(fe(e))}}
-async function delChain(id){if(!confirm('Remove this chain server?'))return;
-  try{const ref=db.collection('chains').doc(id),d=await ref.get();
-    if(d.exists&&!S.staff&&d.data().submitted_by!==(S.user&&S.user.id))return say('That is not your application');
-    await ref.delete();chains()}catch(e){say(fe(e))}}
+  try{await staffWrite('c_'+id,b=>b.update(db.collection('chains').doc(id),{review:r,reviewed_by:S.user.id}));say(r=='accepted'?'Accepted. It is now listed.':'Denied.');chains()}catch(e){say(e.message||fe(e))}}
+async function delChain(id){if(!S.staff||!confirm('Remove this chain server?'))return;
+  try{await staffWrite('c_'+id,b=>b.delete(db.collection('chains').doc(id)));chains()}catch(e){say(e.message||fe(e))}}
 
 // Save progress when leaving the page (and every 15s)
 function save(){if(!S.user)return;draft.tab=tab;
-  localStorage.setItem('rp_draft_'+S.user.id,JSON.stringify(draft));
-  db.collection('prefs').doc(S.user.id).set({json:JSON.stringify(draft),updated:Date.now()}).catch(()=>{})}
+  try{localStorage.setItem('rp_draft_'+S.user.id,JSON.stringify(draft))}catch{}}
 addEventListener('pagehide',save);document.addEventListener('visibilitychange',()=>document.hidden&&save());setInterval(save,15000);
 // ===== animation: cards rise in as they appear / scroll into view =====
 (function(){
