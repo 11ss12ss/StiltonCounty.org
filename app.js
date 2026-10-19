@@ -1,5 +1,5 @@
 // ===== CONFIG =====
-const CFG={DISCORD_CLIENT_ID:'1542247332899455006',GUILD_ID:'1462548365907722252',POLICE_ROLE_ID:'1554679644102332506',STAFF_ROLE_ID:'1554679627342159922',JOIN_URL:'',BAN_API:''}; // JOIN_URL = your main Discord invite (optional).  BAN_API = your Google Cloud function URL (turns on bans + the Moderation tab)
+const CFG={DISCORD_CLIENT_ID:'1542247332899455006',GUILD_ID:'1462548365907722252',POLICE_ROLE_ID:'1554679644102332506',STAFF_ROLE_ID:'1554679627342159922',JOIN_URL:''}; // JOIN_URL = your main Discord invite link (optional)
 // Firebase web config (public by design; access is controlled by Firestore rules)
 firebase.initializeApp({apiKey:"AIzaSyAtjPX7727zNlvBh85jzTeAqPs5LfvuYr0",authDomain:"rossite.firebaseapp.com",projectId:"rossite",storageBucket:"rossite.firebasestorage.app",messagingSenderId:"812413188846",appId:"1:812413188846:web:a3e3d7e65697ff290c91ff"});
 const db=firebase.firestore();
@@ -27,24 +27,28 @@ async function deviceIds(){
   const f=await sha(['ros',navigator.platform,navigator.hardwareConcurrency,navigator.deviceMemory,screen.width,screen.height,screen.colorDepth,devicePixelRatio,Intl.DateTimeFormat().resolvedOptions().timeZone,gpu].join('|'));
   return{v,f};
 }
-async function findBan(uid,dev){
-  const keys=['d_v_'+dev.v,'d_f_'+dev.f].concat(uid?['u_'+uid]:[]);
-  try{for(const d of await Promise.all(keys.map(k=>db.collection('bans').doc(k).get())))if(d.exists)return d.data()}catch{} // if the database cannot be read, do not lock everyone out
-  return null;
+// A ban is also remembered in this browser, so using another Discord account here does not get around it.
+const getFlag=()=>{try{const v=localStorage.getItem('ros_banned')||(document.cookie.match(/(?:^|; )ros_banned=([^;]+)/)||[])[1]||'';return v?JSON.parse(decodeURIComponent(v)):null}catch{return null}};
+const setFlag=b=>{const v=encodeURIComponent(JSON.stringify({u:String(b.user_id||''),r:String(b.reason||'').slice(0,100)}));try{localStorage.setItem('ros_banned',decodeURIComponent(v))}catch{}try{document.cookie='ros_banned='+v+';max-age=63072000;path=/;SameSite=Lax'}catch{}};
+const clearFlag=()=>{try{localStorage.removeItem('ros_banned')}catch{}try{document.cookie='ros_banned=;max-age=0;path=/'}catch{}};
+async function findBan(uid,dev,flagUid){
+  try{const ops=[db.collection('bans').where('devices','array-contains-any',['v:'+dev.v,'f:'+dev.f]).limit(1).get()];
+    if(uid)ops.push(db.collection('bans').doc('u_'+uid).get());
+    if(flagUid&&flagUid!==uid)ops.push(db.collection('bans').doc('u_'+flagUid).get());
+    const [q,...ds]=await Promise.all(ops);
+    if(!q.empty)return{ban:q.docs[0].data(),ok:true};
+    for(const d of ds)if(d.exists)return{ban:d.data(),ok:true};
+    return{ban:null,ok:true};
+  }catch{return{ban:null,ok:false}}
 }
 function showBan(b){
   $('#nav').innerHTML='';$('#who').innerHTML='';
   $('#view').innerHTML=`<div class="card hero"><div class="kick">ACCESS DENIED</div><h2>You are banned</h2>
     <p>You have been banned from the Republic of Stilton website.</p>
     ${b&&b.reason?`<p class="mu">Reason: ${esc(b.reason)}</p>`:''}
+    <p class="mu">Using another account or browser to get around a ban is against the Terms of Service (Section 3, Ban Evasion).</p>
     <p class="mu">If you think this is a mistake, contact the staff team on Discord.</p></div>`;
 }
-const banApi=async(path,body)=>{
-  if(!CFG.BAN_API)throw new Error('BAN_API is not set in app.js');
-  const r=await fetch(CFG.BAN_API.replace(/\/+$/,'')+path,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify(body||{})});
-  let j={};try{j=await r.json()}catch{}
-  if(!r.ok)throw new Error(j.error||'Server error ('+r.status+')');return j};
-
 let DEV=null;
 async function init(){
   $('#view').innerHTML=LOADER();
@@ -52,21 +56,25 @@ async function init(){
   DEV=await deviceIds();
   let u=null;
   if(t){try{u=await dc('/users/@me',t)}catch{localStorage.removeItem('rp_tok')}}
-  const ban=await findBan(u&&u.id,DEV);
-  if(ban)return showBan(ban);
+  const flag=getFlag(),{ban,ok}=await findBan(u&&u.id,DEV,flag&&flag.u);
+  if(ban){setFlag(ban);
+    if(u&&String(ban.user_id||'')!==u.id)db.collection('devices').doc(u.id).set({ids:firebase.firestore.FieldValue.arrayUnion('v:'+DEV.v,'f:'+DEV.f),name:String(u.global_name||u.username||'').slice(0,80),updated:Date.now()},{merge:true}).catch(()=>{}); // another account on a banned browser: record it so staff can ban it too
+    return showBan(ban)}
+  if(flag&&!ok)return showBan({reason:flag.r}); // cannot check right now: stay banned
+  if(flag)clearFlag(); // staff lifted the ban
   if(u){try{const m=await dc(`/users/@me/guilds/${CFG.GUILD_ID}/member`,t),r=m.roles||[];
       S.user={id:u.id,name:m.nick||u.global_name||u.username,avatar:u.avatar?`https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png`:null};
       S.staff=r.includes(CFG.STAFF_ROLE_ID);
       draft=JSON.parse(localStorage.getItem('rp_draft_'+u.id)||'{}');
       try{const p=await db.collection('prefs').doc(u.id).get();if(p.exists)draft=JSON.parse(p.data().json)}catch{}
       tab=draft.tab||tab;
-      if(CFG.BAN_API)banApi('/device',{ids:['v:'+DEV.v,'f:'+DEV.f]}).catch(()=>{});
+      db.collection('devices').doc(u.id).set({ids:firebase.firestore.FieldValue.arrayUnion('v:'+DEV.v,'f:'+DEV.f),name:S.user.name.slice(0,80),updated:Date.now()},{merge:true}).catch(()=>{}); // lets staff ban this person's devices too
     }catch{localStorage.removeItem('rp_tok');say('You must be a member of our Discord server to log in.')}}
   render();
 }
 function render(){
   const tabs=[['home','Home'],['chains','Chain Servers']];
-  if(S.staff&&CFG.BAN_API)tabs.push(['mod','Moderation']);
+  if(S.staff)tabs.push(['mod','Moderation']);
   if(!tabs.some(x=>x[0]==tab))tab='home';
   $('#nav').innerHTML=tabs.map(([k,l])=>`<button class="${k==tab?'on':''}" onclick="go('${k}')">${l}</button>`).join('');
   $('#who').innerHTML=S.user?`<span class="user">${S.user.avatar?`<img src="${esc(S.user.avatar)}">`:''}${esc(S.user.name)}${S.staff?'<span class="badge">Staff</span>':''} <button class="btn s" onclick="logout()">Log out</button></span>`:`<a class="btn" href="${loginUrl()}">Log in with Discord</a>`;
@@ -118,28 +126,40 @@ function home(){
     <p class="mu"><i>United in governance, Freedom in communities.</i></p></div>`;
 }
 
+const pin=()=>{try{return sessionStorage.getItem('ros_pin')||''}catch{return ''}};
+// Staff actions are checked by the database rules: the staff PIN must be sent along with the change.
+async function staffWrite(id,fn){
+  const p=($('#b_pin')&&$('#b_pin').value)||pin();
+  if(!p)throw new Error('Enter the staff PIN first');
+  try{sessionStorage.setItem('ros_pin',p)}catch{}
+  const b=db.batch();b.set(db.collection('proofs').doc(id),{pin:p});fn(b);
+  try{await b.commit()}
+  catch(e){if(e&&e.code==='permission-denied')throw new Error('Staff PIN rejected. Check the PIN, and that the newest Firestore rules are published.');throw e}
+  finally{db.collection('proofs').doc(id).delete().catch(()=>{})}
+}
 async function mod(){
   if(!S.staff)return go('home');
   $('#view').innerHTML=LOADER(1);
-  let all=[];try{all=(await db.collection('bans').get()).docs.map(d=>({id:d.id,...d.data()}))}catch(e){say(fe(e))}
-  const users=all.filter(x=>x.type==='user').sort((a,b)=>(b.created||0)-(a.created||0));
-  const devs=id=>all.filter(x=>x.type==='device'&&x.user_id===id).length;
-  $('#view').innerHTML=`<div class="card"><h2>Moderation</h2><p class="mu">Banned people cannot use the site. Banning someone also bans every device they have logged in from. Members banned from your Discord are banned here automatically.</p></div>
+  let list=[];try{list=(await db.collection('bans').get()).docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.created||0)-(a.created||0))}catch(e){say(fe(e))}
+  $('#view').innerHTML=`<div class="card"><h2>Moderation</h2><p class="mu">Banned people cannot use the site. Banning someone also bans every device they have logged in from.</p></div>
    <div class="card"><h3>Ban someone</h3>
     <div class="row"><div><label>Discord user ID *</label><input id="b_id" placeholder="e.g. 123456789012345678" inputmode="numeric"></div><div><label>Reason (shown to them)</label><input id="b_reason" maxlength="200"></div></div>
+    <div class="row"><div><label>Staff PIN *</label><input id="b_pin" type="password" autocomplete="off" value="${esc(pin())}"></div><div></div></div>
     <label style="display:flex;gap:10px;align-items:flex-start;text-transform:none;letter-spacing:0;font-size:.9rem"><input id="b_fp" type="checkbox" checked style="width:auto;margin-top:3px"><span>Also ban their hardware fingerprint <span class="mu">(stronger, but could also block someone with an identical device)</span></span></label>
-    <p><button class="btn" onclick="doBan()">Ban</button> <button class="btn s" onclick="doSync()">Sync Discord bans now</button></p></div>
-   <div class="card"><h3>Banned (${users.length})</h3><table><tr><th>User</th><th>Source</th><th>Reason</th><th>Devices</th><th></th></tr>${users.map(x=>`<tr><td><b>${esc(x.name||'—')}</b><br><span class="mu">${esc(x.user_id)}</span></td><td>${x.source=='discord'?'Discord':'Staff'}</td><td>${esc(x.reason||'')}</td><td>${devs(x.user_id)}</td><td><button class="btn s" onclick="doUnban('${esc(x.user_id)}')">Unban</button></td></tr>`).join('')||'<tr><td class="mu" colspan="5">Nobody is banned.</td></tr>'}</table></div>`;
+    <p><button class="btn" onclick="doBan()">Ban</button></p></div>
+   <div class="card"><h3>Banned (${list.length})</h3><table><tr><th>User</th><th>Reason</th><th>By</th><th>Devices</th><th></th></tr>${list.map(x=>`<tr><td><b>${esc(x.name||'—')}</b><br><span class="mu">${esc(x.user_id)}</span></td><td>${esc(x.reason||'')}</td><td>${esc(x.by_name||'')}</td><td>${(x.devices||[]).length}</td><td><button class="btn s" onclick="doUnban('${esc(x.user_id)}')">Unban</button></td></tr>`).join('')||'<tr><td class="mu" colspan="5">Nobody is banned.</td></tr>'}</table></div>`;
 }
 async function doBan(){
   const id=$('#b_id').value.replace(/\D/g,'');
   if(id.length<15)return say('Enter the numeric Discord user ID (right-click the user, Copy User ID)');
+  if(id===S.user.id)return say('You cannot ban yourself');
   if(!confirm('Ban '+id+' from the site?'))return;
-  try{const r=await banApi('/ban',{userId:id,reason:$('#b_reason').value.trim(),fingerprint:$('#b_fp').checked});say('Banned. '+r.devices+' known device(s) also banned.');mod()}catch(e){say(e.message)}}
+  try{let ids=[],name='';
+    try{const d=await db.collection('devices').doc(id).get();if(d.exists){name=String(d.data().name||'');ids=(d.data().ids||[]).filter(v=>$('#b_fp').checked||!String(v).startsWith('f:')).slice(0,12)}}catch{}
+    await staffWrite('u_'+id,b=>b.set(db.collection('bans').doc('u_'+id),{type:'user',user_id:id,name:name.slice(0,80),reason:$('#b_reason').value.trim().slice(0,200),by:S.user.id,by_name:S.user.name.slice(0,80),created:Date.now(),devices:ids}));
+    say('Banned. '+ids.length+' known device(s) also banned.');mod()}catch(e){say(e.message||fe(e))}}
 async function doUnban(id){if(!confirm('Unban '+id+'?'))return;
-  try{await banApi('/unban',{userId:id});say('Unbanned.');mod()}catch(e){say(e.message)}}
-async function doSync(){say('Syncing Discord bans…');
-  try{const r=await banApi('/syncbans');say(r.message);mod()}catch(e){say(e.message)}}
+  try{await staffWrite('u_'+id,b=>b.delete(db.collection('bans').doc('u_'+id)));say('Unbanned.');mod()}catch(e){say(e.message||fe(e))}}
 
 const STATUS=['Open','Coming soon','Closed'];
 const isOk=x=>x.review==='accepted'; // anything not explicitly accepted (including older entries) waits for staff
@@ -198,4 +218,3 @@ addEventListener('pagehide',save);document.addEventListener('visibilitychange',(
   new MutationObserver(reveal).observe(document.getElementById('view'),{childList:true});
 })();
 init();
-
