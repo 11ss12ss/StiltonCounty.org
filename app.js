@@ -72,6 +72,17 @@ async function init(){
       db.collection('devices').doc(u.id).set({ids:firebase.firestore.FieldValue.arrayUnion('v:'+DEV.v,'f:'+DEV.f),name:S.user.name.slice(0,80),updated:Date.now()},{merge:true}).catch(()=>{}); // lets staff ban this person's devices too
     }catch{localStorage.removeItem('rp_tok');say('You must be a member of our Discord server to log in.')}}
   render();
+  watchBan(u&&u.id);
+}
+// Live ban watch: the moment staff bans this account (or a device it uses), reload the page so the ban screen appears.
+function watchBan(uid){
+  let n=0;try{n=+sessionStorage.getItem('ros_rl')||0}catch{}
+  const hit=()=>{if(BANNED||n>=3)return;try{sessionStorage.setItem('ros_rl',String(n+1))}catch{}
+    try{save()}catch{} location.reload()};
+  const first={a:true,b:true};
+  if(uid)db.collection('bans').doc('u_'+uid).onSnapshot(s=>{if(first.a){first.a=false;return}if(s.exists)hit()},()=>{});
+  const ids=['v:'+DEV.v,'f:'+DEV.f];
+  db.collection('bans').where('devices','array-contains-any',ids).onSnapshot(s=>{if(first.b){first.b=false;return}if(!s.empty)hit()},()=>{});
 }
 function render(){
   const tabs=[['home','Home'],['chains','Chain Servers'],['terms','Terms']];
