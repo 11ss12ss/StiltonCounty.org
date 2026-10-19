@@ -218,3 +218,4 @@ addEventListener('pagehide',save);document.addEventListener('visibilitychange',(
   new MutationObserver(reveal).observe(document.getElementById('view'),{childList:true});
 })();
 init();
+
