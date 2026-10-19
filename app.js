@@ -78,6 +78,7 @@ async function init(){
     }catch{localStorage.removeItem('rp_tok');say('You must be a member of our Discord server to log in.')}}
   render();
   watchBan(u&&u.id);
+  setTimeout(()=>{try{if(!BANNED&&!localStorage.getItem('ros_seen'))startIntro()}catch{}},500);
 }
 // Live ban watch: the moment staff bans this account (or a device it uses), reload the page so the ban screen appears.
 function watchBan(uid){
@@ -93,7 +94,7 @@ function render(){
   const tabs=[['home','Home'],['chains','Chain Servers'],['terms','Terms']];
   if(S.staff)tabs.push(['mod','Moderation']);
   if(!tabs.some(x=>x[0]==tab))tab='home';
-  $('#nav').innerHTML=tabs.map(([k,l])=>`<button class="${k==tab?'on':''}" onclick="go('${k}')">${l}</button>`).join('');
+  $('#nav').innerHTML=tabs.map(([k,l])=>`<button data-k="${k}" class="${k==tab?'on':''}" onclick="go('${k}')">${l}</button>`).join('');
   $('#who').innerHTML=S.user?`<span class="user">${S.user.avatar?`<img src="${esc(S.user.avatar)}">`:''}${esc(S.user.name)}${S.staff?'<span class="badge">Staff</span>':''} <button class="btn s" onclick="logout()">Log out</button></span>`:`<a class="btn" href="${loginUrl()}">Log in with Discord</a>`;
   ({home,chains,terms,mod})[tab]();
 }
@@ -111,7 +112,7 @@ function terms(){
 function home(){
   $('#view').innerHTML=`<div class="card hero"><div class="kick">|+-+| Republic Of Stilton |+-+|</div><h2>Republic of Stilton</h2>
    <p class="mu">Est Jan 2026 &bull; “United in governance, Freedom in communities”</p>
-   <p><button class="btn" onclick="go('chains')">Explore Chain Servers</button> ${safeUrl(CFG.JOIN_URL)?`<a class="btn s" href="${esc(safeUrl(CFG.JOIN_URL))}" target="_blank" rel="noopener noreferrer">Join the Discord</a>`:''}</p></div>
+   <p><button class="btn" onclick="go('chains')">Explore Chain Servers</button> <button class="btn s" onclick="startTour()">Take a tour</button> ${safeUrl(CFG.JOIN_URL)?`<a class="btn s" href="${esc(safeUrl(CFG.JOIN_URL))}" target="_blank" rel="noopener noreferrer">Join the Discord</a>`:''}</p></div>
 
    <div class="card sec"><h3>What ROS Is.</h3>
     <p>The Republic of Stilton (ROS) is, at its core, is a roleplay server where you get to choose your path. In ROS there are many paths you can take such as:</p>
@@ -238,5 +239,76 @@ addEventListener('pagehide',save);document.addEventListener('visibilitychange',(
   const io='IntersectionObserver' in window?new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.08}):null;
   const reveal=()=>{document.querySelectorAll('#view .card:not(.rv),#view .cgrid .card:not(.rv)').forEach(c=>{c.classList.add('rv');io?io.observe(c):c.classList.add('in')})};
   new MutationObserver(reveal).observe(document.getElementById('view'),{childList:true});
+})();
+
+// ===== first-visit welcome + guided tour =====
+(function(){
+  const st=document.createElement('style');
+  st.textContent=`
+  .ov{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(3,8,20,.82);animation:ovIn .3s ease both}
+  .ov .card{max-width:520px;width:100%;margin:0;box-shadow:0 20px 60px rgba(0,0,0,.6);animation:ovUp .35s ease both}
+  .ov ul{margin:10px 0 16px;padding-left:20px}.ov li{margin:6px 0}
+  .ov .acts{display:flex;gap:10px;flex-wrap:wrap}
+  .th{position:fixed;z-index:1001;border-radius:10px;pointer-events:none;box-shadow:0 0 0 9999px rgba(3,8,20,.8),0 0 0 2px var(--blue),0 0 24px rgba(47,91,209,.7);transition:all .3s ease}
+  .tt{position:fixed;z-index:1002;width:min(340px,calc(100vw - 24px));background:var(--panel);border:1px solid var(--bd);border-top:3px solid var(--red);border-radius:12px;padding:16px;box-shadow:0 14px 40px rgba(0,0,0,.6);animation:ovUp .3s ease both}
+  .tt h3{margin:0 0 6px}.tt p{margin:0 0 12px}.tt .acts{display:flex;gap:8px;align-items:center}.tt .acts .sp{flex:1}.tt .cnt{color:var(--mu);font-size:.8rem}
+  .tclick{position:fixed;inset:0;z-index:1000}
+  @keyframes ovIn{from{opacity:0}to{opacity:1}}@keyframes ovUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion:reduce){.ov,.ov .card,.tt{animation:none}.th{transition:none}}`;
+  document.head.appendChild(st);
+  const mark=()=>{try{localStorage.setItem('ros_seen','1')}catch{}};
+  let ov=null,hl=null,tip=null,steps=[],i=0,onKey=null,onRs=null;
+  const clean=()=>{[ov,hl,tip].forEach(e=>e&&e.remove());ov=hl=tip=null;if(onKey)removeEventListener('keydown',onKey);if(onRs)removeEventListener('resize',onRs);onKey=onRs=null};
+  window.startIntro=function(){
+    clean();ov=document.createElement('div');ov.className='ov';
+    ov.innerHTML=`<div class="card" role="dialog" aria-modal="true" aria-label="Welcome"><div class="kick">|+-+| Republic Of Stilton |+-+|</div><h2>Welcome to the Republic of Stilton</h2>
+      <p class="mu">Looks like it's your first time here. This site is the hub for the whole Republic.</p>
+      <ul><li>Learn what ROS is and how it works</li><li>Browse every chain server (city) in one place</li><li>Log in with Discord to apply to list your own chain server</li></ul>
+      <div class="acts"><button class="btn" id="i_go">Take the quick tour</button><button class="btn s" id="i_skip">Skip</button></div></div>`;
+    document.body.appendChild(ov);
+    const done=()=>{mark();clean()};
+    ov.querySelector('#i_go').onclick=()=>{mark();clean();startTour()};
+    ov.querySelector('#i_skip').onclick=done;
+    ov.addEventListener('click',e=>{if(e.target===ov)done()});
+    onKey=e=>{if(e.key==='Escape')done()};addEventListener('keydown',onKey);
+    ov.querySelector('#i_go').focus();
+  };
+  const build=()=>{const s=[
+    {k:'home',sel:'#nav [data-k=home]',t:'Home',d:'Start here. It explains what the Republic of Stilton is: roleplay, government, the economy and how chain servers fit in.'},
+    {k:'chains',sel:'#nav [data-k=chains]',t:'Chain Servers',d:'Every city in the Republic. Open ones show a Join button. If you run a city, log in and apply here, and staff will review it.'},
+    {k:'terms',sel:'#nav [data-k=terms]',t:'Terms of Service',d:'The rules for everyone in the community, including international members. Worth a read before you join in.'},
+    {k:null,sel:'#who',t:S.user?'Your account':'Log in',d:S.user?'This is you. Your Discord name shows here, and you can log out any time.':'Log in with Discord to prove you are in our server. You need this to apply for a chain server.'}];
+    if(S.staff)s.push({k:'mod',sel:'#nav [data-k=mod]',t:'Moderation',d:'Staff only. Ban or unban people from the site. Chain applications are reviewed on the Chain Servers tab.'});
+    return s};
+  function place(){
+    const s=steps[i],el=document.querySelector(s.sel);if(!el)return;
+    el.scrollIntoView({block:'nearest',inline:'nearest'});
+    const r=el.getBoundingClientRect(),p=6;
+    Object.assign(hl.style,{left:r.left-p+'px',top:r.top-p+'px',width:r.width+2*p+'px',height:r.height+2*p+'px'});
+    const w=tip.offsetWidth,h=tip.offsetHeight;
+    let top=r.bottom+p+12;if(top+h>innerHeight-8)top=Math.max(8,r.top-p-12-h);
+    let left=Math.min(Math.max(12,r.left),innerWidth-w-12);
+    Object.assign(tip.style,{top:top+'px',left:left+'px'});
+  }
+  function show(){
+    const s=steps[i];if(s.k&&typeof go==='function'){go(s.k);}
+    setTimeout(()=>{
+      tip.innerHTML=`<h3>${esc(s.t)}</h3><p class="mu">${esc(s.d)}</p><div class="acts"><span class="cnt">${i+1} / ${steps.length}</span><span class="sp"></span>${i?'<button class="btn s" id="t_b">Back</button>':''}<button class="btn" id="t_n">${i==steps.length-1?'Done':'Next'}</button><button class="btn s" id="t_x" aria-label="Close tour">&times;</button></div>`;
+      tip.querySelector('#t_n').onclick=()=>{i==steps.length-1?end():(i++,show())};
+      const b=tip.querySelector('#t_b');if(b)b.onclick=()=>{i--;show()};
+      tip.querySelector('#t_x').onclick=end;
+      place();
+    },60);
+  }
+  function end(){clean();go('home');scrollTo(0,0)}
+  window.startTour=function(){
+    if(BANNED)return;clean();mark();steps=build();i=0;
+    ov=document.createElement('div');ov.className='tclick';document.body.appendChild(ov);
+    hl=document.createElement('div');hl.className='th';document.body.appendChild(hl);
+    tip=document.createElement('div');tip.className='tt';tip.setAttribute('role','dialog');document.body.appendChild(tip);
+    onKey=e=>{if(e.key==='Escape')end();else if(e.key==='ArrowRight'&&i<steps.length-1){i++;show()}else if(e.key==='ArrowLeft'&&i>0){i--;show()}};addEventListener('keydown',onKey);
+    onRs=()=>place();addEventListener('resize',onRs);
+    show();
+  };
 })();
 init();
