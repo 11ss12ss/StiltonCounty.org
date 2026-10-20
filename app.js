@@ -11,13 +11,16 @@ const LOADER=n=>`<div class="loader"><span class="spin"></span><span>Loading…<
 const say=t=>{const m=$('#msg');m.textContent=t;m.classList.toggle('hide',!t)};
 const fe=e=>e&&e.code==='permission-denied'?'Firestore blocked this. Paste the rules into Firebase Console > Firestore > Rules and press Publish.':(e&&e.message)||'Database error';
 const dc=async(p,t)=>{const r=await fetch('https://discord.com/api/v10'+p,{headers:{Authorization:'Bearer '+t}});if(!r.ok)throw new Error(r.status);return r.json()};
-const oState=()=>{try{let s=sessionStorage.getItem('ros_st');if(!s){s=[...crypto.getRandomValues(new Uint8Array(16))].map(x=>x.toString(16).padStart(2,'0')).join('');sessionStorage.setItem('ros_st',s)}return s}catch{return ''}};
+let LOGIN_MSG='';
+const oState=()=>{try{const o=JSON.parse(localStorage.getItem('ros_st')||'null');if(o&&o.s&&o.t>Date.now()-18e5)return o.s;
+  const s=[...crypto.getRandomValues(new Uint8Array(16))].map(x=>x.toString(16).padStart(2,'0')).join('');localStorage.setItem('ros_st',JSON.stringify({s,t:Date.now()}));return s}catch{return ''}};
 const loginUrl=()=>'https://discord.com/oauth2/authorize?'+new URLSearchParams({client_id:CFG.DISCORD_CLIENT_ID,response_type:'token',scope:'identify guilds.members.read',redirect_uri:location.origin+location.pathname+location.search,state:oState()});
 function token(){const h=new URLSearchParams(location.hash.slice(1));
   if(h.get('access_token')){
-    let want='';try{want=sessionStorage.getItem('ros_st')||''}catch{}
+    let want='';try{const o=JSON.parse(localStorage.getItem('ros_st')||'null');want=o&&o.s||''}catch{}
     // only accept a token we asked for: a link crafted by someone else cannot log you in as them
-    if(want&&h.get('state')===want){localStorage.setItem('rp_tok',JSON.stringify({t:h.get('access_token'),exp:Date.now()+h.get('expires_in')*1000}));try{sessionStorage.removeItem('ros_st')}catch{}}
+    if(want&&h.get('state')===want){localStorage.setItem('rp_tok',JSON.stringify({t:h.get('access_token'),exp:Date.now()+h.get('expires_in')*1000}));try{localStorage.removeItem('ros_st')}catch{}}
+    else LOGIN_MSG='Login could not be verified. Press "Log in with Discord" again and finish the login in the same browser.';
     history.replaceState(null,'',location.pathname+location.search)}
   const a=JSON.parse(localStorage.getItem('rp_tok')||'null');return a&&a.exp>Date.now()?a.t:null}
 function logout(){localStorage.removeItem('rp_tok');location.reload()}
@@ -62,7 +65,7 @@ async function init(){
   const t=token();
   DEV=await deviceIds();
   let u=null;
-  if(t){try{u=await dc('/users/@me',t)}catch{localStorage.removeItem('rp_tok')}}
+  if(t){try{u=await dc('/users/@me',t)}catch{localStorage.removeItem('rp_tok');LOGIN_MSG='Your Discord login expired. Please log in again.'}}
   const flag=getFlag(),{ban,ok}=await findBan(u&&u.id,DEV,flag&&flag.u);
   if(ban){setFlag(ban);
     if(u&&String(ban.user_id||'')!==u.id)db.collection('devices').doc(u.id).set({ids:firebase.firestore.FieldValue.arrayUnion('v:'+DEV.v,'f:'+DEV.f),name:String(u.global_name||u.username||'').slice(0,80),updated:Date.now()},{merge:true}).catch(()=>{}); // another account on a banned browser: record it so staff can ban it too
@@ -73,10 +76,11 @@ async function init(){
       S.user={id:u.id,name:m.nick||u.global_name||u.username,avatar:u.avatar?`https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png`:null};
       S.staff=r.includes(CFG.STAFF_ROLE_ID);
       draft=JSON.parse(localStorage.getItem('rp_draft_'+u.id)||'{}');
-      tab=['home','chains','terms','mod'].includes(draft.tab)?draft.tab:tab;
+      tab=['home','chains','bank','terms','mod'].includes(draft.tab)?draft.tab:tab;
       db.collection('devices').doc(u.id).set({ids:firebase.firestore.FieldValue.arrayUnion('v:'+DEV.v,'f:'+DEV.f),name:S.user.name.slice(0,80),updated:Date.now()},{merge:true}).catch(()=>{}); // lets staff ban this person's devices too
-    }catch{localStorage.removeItem('rp_tok');say('You must be a member of our Discord server to log in.')}}
+    }catch(e){localStorage.removeItem('rp_tok');S.user=null;S.staff=false;LOGIN_MSG='Could not confirm your Discord server membership'+(e&&/^\d+$/.test(e.message)?' (Discord error '+e.message+')':'')+'. You must be a member of our Discord server to log in.'}}
   render();
+  if(LOGIN_MSG)say(LOGIN_MSG);
   watchBan(u&&u.id);
   setTimeout(()=>{try{if(!BANNED&&!localStorage.getItem('ros_seen'))startIntro()}catch{}},500);
 }
@@ -91,12 +95,14 @@ function watchBan(uid){
   db.collection('bans').where('devices','array-contains-any',ids).onSnapshot(s=>{if(first.b){first.b=false;return}if(!s.empty)hit()},()=>{});
 }
 function render(){
-  const tabs=[['home','Home'],['chains','Chain Servers'],['terms','Terms']];
+  const tabs=[['home','Home'],['chains','Chain Servers']];
+  if(S.user)tabs.push(['bank','Bank']);
+  tabs.push(['terms','Terms']);
   if(S.staff)tabs.push(['mod','Moderation']);
   if(!tabs.some(x=>x[0]==tab))tab='home';
   $('#nav').innerHTML=tabs.map(([k,l])=>`<button data-k="${k}" class="${k==tab?'on':''}" onclick="go('${k}')">${l}</button>`).join('');
   $('#who').innerHTML=S.user?`<span class="user">${S.user.avatar?`<img src="${esc(S.user.avatar)}">`:''}${esc(S.user.name)}${S.staff?'<span class="badge">Staff</span>':''} <button class="btn s" onclick="logout()">Log out</button></span>`:`<a class="btn" href="${loginUrl()}">Log in with Discord</a>`;
-  ({home,chains,terms,mod})[tab]();
+  ({home,chains,bank,terms,mod})[tab]();
 }
 const go=k=>{if(BANNED)return;tab=k;draft.tab=k;say('');render()};
 const needLogin=()=>$('#view').innerHTML=`<div class="card"><h2>Citizen Login</h2><p class="mu">Log in with Discord. We'll check that you're in our server.</p><a class="btn" href="${loginUrl()}">Log in with Discord</a></div>`;
@@ -153,15 +159,26 @@ function home(){
 let PIN='';const pin=()=>PIN;
 // Staff actions are checked by the database rules: the staff PIN must be sent along with the change.
 async function staffWrite(id,fn){
-  let p=($('#b_pin')&&$('#b_pin').value)||PIN;
-  if(!p)p=prompt('Staff PIN')||'';
+  let p=(($('#b_pin')&&$('#b_pin').value)||PIN).trim();
+  if(!p)p=(prompt('Staff PIN')||'').trim();
   if(!p)throw new Error('Enter the staff PIN first');
+  const ref=db.collection('proofs').doc(id);
+  // step 1: check the PIN on its own, so a wrong PIN can be told apart from a blocked change
+  try{await ref.set({pin:p})}catch(e){if(e&&e.code==='permission-denied'){PIN='';throw new Error('Staff PIN rejected. Use the Test PIN button on the Moderation tab to check it.')}throw e}
+  await ref.delete().catch(()=>{}); // no leftover proof, so it cannot be reused
   PIN=p;
-  await db.collection('proofs').doc(id).delete().catch(()=>{}); // remove any leftover proof so it cannot be reused
-  const b=db.batch();b.set(db.collection('proofs').doc(id),{pin:p});fn(b);
+  // step 2: the real change, sent together with the PIN proof
+  const b=db.batch();b.set(ref,{pin:p});fn(b);
   try{await b.commit()}
-  catch(e){if(e&&e.code==='permission-denied'){PIN='';throw new Error('Staff PIN rejected. Check the PIN, and that the newest Firestore rules are published.')}throw e}
-  finally{db.collection('proofs').doc(id).delete().catch(()=>{})}
+  catch(e){if(e&&e.code==='permission-denied')throw new Error('Your PIN is correct, but the database rules blocked this change ('+id+'). Check the Discord ID and that the newest rules are published.');throw e}
+  finally{ref.delete().catch(()=>{})}
+}
+async function testPin(){
+  const p=(($('#b_pin')&&$('#b_pin').value)||PIN).trim();
+  if(!p)return say('Type the staff PIN in the box first.');
+  const ref=db.collection('proofs').doc('pintest_'+Date.now());
+  try{await ref.set({pin:p});ref.delete().catch(()=>{});PIN=p;say('PIN accepted. The database recognises it.')}
+  catch(e){say(e&&e.code==='permission-denied'?'PIN rejected. It does not match the pin in config/staff (or that document is missing, or its pin field is not a string).':(e.message||fe(e)))}
 }
 async function mod(){
   if(!S.staff)return go('home');
@@ -170,9 +187,13 @@ async function mod(){
   $('#view').innerHTML=`<div class="card"><h2>Moderation</h2><p class="mu">Banned people cannot use the site. Banning someone also bans every device they have logged in from.</p></div>
    <div class="card"><h3>Ban someone</h3>
     <div class="row"><div><label>Discord user ID *</label><input id="b_id" placeholder="e.g. 123456789012345678" inputmode="numeric"></div><div><label>Reason (shown to them)</label><input id="b_reason" maxlength="200"></div></div>
-    <div class="row"><div><label>Staff PIN *</label><input id="b_pin" type="password" autocomplete="off" value="${esc(pin())}"></div><div></div></div>
+    <div class="row"><div><label>Staff PIN *</label><input id="b_pin" type="password" name="ros-staff-pin" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" value="${esc(pin())}"></div><div><label>&nbsp;</label><button class="btn s" onclick="testPin()">Test PIN</button></div></div>
     <label style="display:flex;gap:10px;align-items:flex-start;text-transform:none;letter-spacing:0;font-size:.9rem"><input id="b_fp" type="checkbox" checked style="width:auto;margin-top:3px"><span>Also ban their hardware fingerprint <span class="mu">(stronger, but could also block someone with an identical device)</span></span></label>
     <p><button class="btn" onclick="doBan()">Ban</button></p></div>
+   <div class="card"><h3>Bank (staff)</h3><p class="mu">Money only enters the economy here. The person must have opened their bank account on the Bank tab first. Uses the staff PIN above.</p>
+    <div class="row"><div><label>Discord user ID *</label><input id="g_id" inputmode="numeric"></div><div><label>Amount (SB) *</label><input id="g_amt" inputmode="numeric"></div></div>
+    <label>Note</label><input id="g_note" maxlength="100">
+    <p><button class="btn" onclick="bankGrant('grant')">Give cash</button> <button class="btn s" onclick="bankGrant('take')">Remove cash</button> <button class="btn s" onclick="bankReset()">Unlink account</button></p></div>
    <div class="card"><h3>Banned (${list.length})</h3><table><tr><th>User</th><th>Reason</th><th>By</th><th>Devices</th><th></th></tr>${list.map(x=>`<tr><td><b>${esc(x.name||'—')}</b><br><span class="mu">${esc(x.user_id)}</span></td><td>${esc(x.reason||'')}</td><td>${esc(x.by_name||'')}</td><td>${(x.devices||[]).length}</td><td><button class="btn s" onclick="doUnban('${safeId(x.user_id)}')">Unban</button></td></tr>`).join('')||'<tr><td class="mu" colspan="5">Nobody is banned.</td></tr>'}</table></div>`;
 }
 async function doBan(){
@@ -184,8 +205,96 @@ async function doBan(){
     try{const d=await db.collection('devices').doc(id).get();if(d.exists){name=String(d.data().name||'');ids=(d.data().ids||[]).filter(v=>$('#b_fp').checked||!String(v).startsWith('f:')).slice(0,20)}}catch{}
     await staffWrite('u_'+id,b=>b.set(db.collection('bans').doc('u_'+id),{type:'user',user_id:id,name:name.slice(0,80),reason:$('#b_reason').value.trim().slice(0,200),by:S.user.id,by_name:S.user.name.slice(0,80),created:Date.now(),devices:ids}));
     say('Banned. '+ids.length+' known device(s) also banned.');mod()}catch(e){say(e.message||fe(e))}}
-async function doUnban(id){if(!confirm('Unban '+id+'?'))return;
+async function doUnban(id){if(!id||!confirm('Unban '+id+'?'))return;
   try{await staffWrite('u_'+id,b=>b.delete(db.collection('bans').doc('u_'+id)));say('Unbanned.');mod()}catch(e){say(e.message||fe(e))}}
+
+
+// ===== bank / economy (Firestore: accounts + ledger) =====
+const SB=n=>Number(n||0).toLocaleString()+' SB';
+const FV=()=>firebase.firestore.FieldValue;
+const newId=c=>db.collection(c).doc().id;
+const amt=v=>{const n=Number(String(v||'').replace(/[, ]/g,''));return Number.isInteger(n)&&n>0&&n<=1e9?n:0};
+async function authed(){
+  if(!firebase.auth)throw new Error('Bank is not set up: firebase-auth-compat.js is missing from index.html.');
+  const a=firebase.auth();if(a.currentUser)return a.currentUser;
+  try{await a.signInAnonymously()}catch(e){throw new Error(e&&['auth/operation-not-allowed','auth/admin-restricted-operation','auth/configuration-not-found'].includes(e.code)?'Bank is not set up: in Firebase Console open Authentication, press Get started, then Sign-in method > Anonymous > Enable.':(e.message||'Sign-in failed'))}
+  return a.currentUser;
+}
+const bankErr=(e,type)=>e&&e.code==='permission-denied'?(type==='transfer'?'Transfer blocked. Check that you have enough in the bank and that the recipient has opened their own bank account.':type==='deposit'?'Blocked. Check that you have enough cash.':type==='withdraw'?'Blocked. Check that you have enough in the bank.':'Blocked by the database rules.'):(e&&e.message)||'Database error';
+async function bank(){
+  if(!S.user){$('#view').innerHTML=`<div class="card"><h2>Bank</h2><p class="mu">Log in with Discord to use the bank.</p><a class="btn" href="${loginUrl()}">Log in with Discord</a></div>`;return}
+  $('#view').innerHTML=LOADER(1);
+  const id=S.user.id;let acct=null,state='ok';
+  try{await authed();const d=await db.collection('accounts').doc(id).get();
+    if(!d.exists)state='new';else{acct=d.data();if(acct.owner==='')state='claim'}
+  }catch(e){if(e&&e.code==='permission-denied')state='locked';else{state='err';say(e.message||fe(e))}}
+  if(state!=='ok'){
+    const m={new:['Open your bank account','You do not have a bank account yet. It starts at 0 SB.','Open account','openAcct()'],
+      claim:['Claim your bank account','An account is waiting for you (staff created or reset it). Claim it on this browser to use it.','Claim account','openAcct(true)'],
+      locked:['Account locked to another browser','This bank account is linked to a different browser or device. If that was you (for example you cleared your browser data), ask staff to reset it, then come back and claim it.','',''],
+      err:['Bank unavailable','Something went wrong. Reload the page and try again.','','']}[state];
+    $('#view').innerHTML=`<div class="card"><h2>${m[0]}</h2><p class="mu">${esc(m[1])}</p>${m[2]?`<button class="btn" onclick="${m[3]}">${m[2]}</button>`:''}</div>`;return}
+  let hist=[];try{const [x,y]=await Promise.all([db.collection('ledger').where('from','==',id).limit(25).get(),db.collection('ledger').where('to','==',id).limit(25).get()]);const m={};[...x.docs,...y.docs].forEach(d=>m[d.id]=d.data());hist=Object.values(m).sort((p,q)=>(q.at||0)-(p.at||0)).slice(0,20)}catch{}
+  const line=t=>{const n=SB(t.amount);
+    if(t.type==='deposit')return['Deposit',n,'+'];if(t.type==='withdraw')return['Withdrawal',n,'-'];
+    if(t.type==='grant')return['Received from staff',n,'+'];if(t.type==='take')return['Removed by staff',n,'-'];
+    return t.from===id?['Sent to '+t.to,n,'-']:['Received from '+t.from,n,'+']};
+  $('#view').innerHTML=`<div class="card"><h2>Bank</h2><p class="mu">StiltonBux (SB) &bull; ${esc(S.user.name)}</p>
+    <div class="cgrid" style="margin:14px 0 0"><div class="card"><div class="mu">Cash</div><h3>${SB(acct.cash)}</h3></div><div class="card"><div class="mu">Bank</div><h3>${SB(acct.bank)}</h3></div><div class="card"><div class="mu">Total</div><h3>${SB((acct.cash||0)+(acct.bank||0))}</h3></div></div></div>
+   <div class="cgrid">
+    <div class="card"><h3>Deposit</h3><p class="mu">Move cash into your bank.</p><input id="k_dep" inputmode="numeric" placeholder="Amount"><p><button class="btn" onclick="bankOp('deposit')">Deposit</button></p></div>
+    <div class="card"><h3>Withdraw</h3><p class="mu">Take money out of your bank as cash.</p><input id="k_wd" inputmode="numeric" placeholder="Amount"><p><button class="btn" onclick="bankOp('withdraw')">Withdraw</button></p></div>
+    <div class="card"><h3>Transfer</h3><p class="mu">Send money from your bank to another member. They must have opened their bank account.</p>
+      <input id="k_to" inputmode="numeric" placeholder="Their Discord user ID"><input id="k_amt" inputmode="numeric" placeholder="Amount" style="margin-top:8px"><input id="k_note" maxlength="100" placeholder="Note (optional)" style="margin-top:8px"><p><button class="btn" onclick="bankOp('transfer')">Send</button></p></div></div>
+   <div class="card"><h3>Recent activity</h3><table><tr><th>What</th><th>Amount</th><th>Note</th><th>When</th></tr>${hist.map(t=>{const l=line(t);return `<tr><td>${esc(l[0])}</td><td>${l[2]}${esc(l[1])}</td><td>${esc(t.note||'')}</td><td class="mu">${esc(new Date(t.at||0).toLocaleString())}</td></tr>`}).join('')||'<tr><td class="mu" colspan="4">No activity yet.</td></tr>'}</table></div>`;
+}
+async function openAcct(claim){
+  try{const u=await authed(),ref=db.collection('accounts').doc(S.user.id),now=Date.now();
+    if(claim)await ref.update({owner:u.uid,updated:now});
+    else await ref.set({owner:u.uid,name:S.user.name.slice(0,80),cash:0,bank:0,lastTx:'',updated:now});
+    bank()}catch(e){say(e&&e.code==='permission-denied'?'That account is already linked to another browser. Ask staff to reset it.':(e.message||fe(e)))}
+}
+async function bankOp(type){
+  if(!S.user)return;const id=S.user.id;let to=id,note='';
+  const a=amt($(type==='deposit'?'#k_dep':type==='withdraw'?'#k_wd':'#k_amt').value);
+  if(!a)return say('Enter a whole number above 0 (up to 1,000,000,000)');
+  if(type==='transfer'){to=$('#k_to').value.replace(/\D/g,'');
+    if(to.length<15||to.length>25)return say("Enter the recipient's Discord user ID");
+    if(to===id)return say('You cannot send money to yourself');
+    note=$('#k_note').value.trim().slice(0,100)}
+  const L=newId('ledger'),b=db.batch(),inc=FV().increment,now=Date.now(),me=db.collection('accounts').doc(id);
+  b.set(db.collection('ledger').doc(L),{type,from:id,to,amount:a,at:now,note});
+  if(type==='deposit')b.update(me,{cash:inc(-a),bank:inc(a),lastTx:L,updated:now});
+  else if(type==='withdraw')b.update(me,{bank:inc(-a),cash:inc(a),lastTx:L,updated:now});
+  else{b.update(me,{bank:inc(-a),lastTx:L,updated:now});b.update(db.collection('accounts').doc(to),{bank:inc(a),lastTx:L,updated:now})}
+  try{await authed();await b.commit();say(type==='transfer'?'Sent '+SB(a)+'.':type==='deposit'?'Deposited '+SB(a)+'.':'Withdrew '+SB(a)+'.');bank()}catch(e){say(bankErr(e,type))}
+}
+// staff: give or remove cash, or unlink an account from its browser (all need the staff PIN)
+async function bankGrant(kind){
+  const to=$('#g_id').value.replace(/\D/g,''),a=amt($('#g_amt').value);
+  if(to.length<15||to.length>25)return say('Enter the Discord user ID');if(!a)return say('Enter a whole number above 0');
+  if(!confirm((kind==='grant'?'Give ':'Remove ')+SB(a)+(kind==='grant'?' to ':' from ')+to+'?'))return;
+  const inc=FV().increment,note=$('#g_note').value.trim().slice(0,100),by=S.user.name.slice(0,80);
+  // create=true: the person has no bank account yet, so staff create one (unclaimed) that already holds the cash
+  const run=(create)=>{const L=newId('ledger'),now=Date.now();
+    return staffWrite('g_'+L,b=>{b.set(db.collection('ledger').doc(L),{type:kind,from:'staff',to,amount:a,at:now,note,by});
+      const acc=db.collection('accounts').doc(to);
+      if(create)b.set(acc,{owner:'',name:'',cash:a,bank:0,lastTx:L,updated:now});
+      else b.update(acc,{cash:inc(kind==='grant'?a:-a),lastTx:L,updated:now})})};
+  try{await authed();
+    try{await run(false);say('Done. '+(kind==='grant'?'Gave ':'Removed ')+SB(a)+'.')}
+    catch(e1){
+      if(kind==='grant'&&/rules blocked/.test(e1.message||'')){
+        try{await run(true);say('Done. Gave '+SB(a)+'. This person had no bank account yet, so one was created for them. They claim it from the Bank tab.');return}catch(e2){}
+      }
+      throw e1}
+  }catch(e){say((e.message||fe(e))+(/rules blocked/.test(e.message||'')?' Both an update and a new-account attempt were blocked, so this is the rules, not a missing account. Check that the newest rules are published, and that removing cash would not take them below 0.':''))}
+}
+async function bankReset(){
+  const id=$('#g_id').value.replace(/\D/g,'');if(id.length<15)return say('Enter the Discord user ID');
+  if(!confirm('Unlink the bank account of '+id+' from its browser? They can claim it again.'))return;
+  try{await authed();await staffWrite('r_'+id,b=>b.update(db.collection('accounts').doc(id),{owner:'',updated:Date.now()}));say('Account unlinked. The owner can claim it again.')}catch(e){say(e.message||fe(e))}
+}
 
 const STATUS=['Open','Coming soon','Closed'];
 const isOk=x=>x.review==='accepted'; // anything not explicitly accepted (including older entries) waits for staff
@@ -225,9 +334,9 @@ async function addChain(){
     if(S.staff){await staffWrite('c_'+ref.id,b=>b.update(ref,{review:'accepted',reviewed_by:S.user.id}));say('Chain server added.')}
     else say('Submitted! Staff will review it soon.');
     chains()}catch(e){say(fe(e))}}
-async function review(id,r){if(!S.staff)return;
+async function review(id,r){if(!S.staff||!id)return;
   try{await staffWrite('c_'+id,b=>b.update(db.collection('chains').doc(id),{review:r,reviewed_by:S.user.id}));say(r=='accepted'?'Accepted. It is now listed.':'Denied.');chains()}catch(e){say(e.message||fe(e))}}
-async function delChain(id){if(!S.staff||!confirm('Remove this chain server?'))return;
+async function delChain(id){if(!S.staff||!id||!confirm('Remove this chain server?'))return;
   try{await staffWrite('c_'+id,b=>b.delete(db.collection('chains').doc(id)));chains()}catch(e){say(e.message||fe(e))}}
 
 // Save progress when leaving the page (and every 15s)
@@ -277,6 +386,7 @@ addEventListener('pagehide',save);document.addEventListener('visibilitychange',(
     {k:'home',sel:'#nav [data-k=home]',t:'Home',d:'Start here. It explains what the Republic of Stilton is: roleplay, government, the economy and how chain servers fit in.'},
     {k:'chains',sel:'#nav [data-k=chains]',t:'Chain Servers',d:'Every city in the Republic. Open ones show a Join button. If you run a city, log in and apply here, and staff will review it.'},
     {k:'terms',sel:'#nav [data-k=terms]',t:'Terms of Service',d:'The rules for everyone in the community, including international members. Worth a read before you join in.'},
+    ...(S.user?[{k:'bank',sel:'#nav [data-k=bank]',t:'Bank',d:'Open your account, then deposit, withdraw and send StiltonBux (SB) to other members.'}]:[]),
     {k:null,sel:'#who',t:S.user?'Your account':'Log in',d:S.user?'This is you. Your Discord name shows here, and you can log out any time.':'Log in with Discord to prove you are in our server. You need this to apply for a chain server.'}];
     if(S.staff)s.push({k:'mod',sel:'#nav [data-k=mod]',t:'Moderation',d:'Staff only. Ban or unban people from the site. Chain applications are reviewed on the Chain Servers tab.'});
     return s};
