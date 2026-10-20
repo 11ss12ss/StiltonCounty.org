@@ -422,3 +422,4 @@ addEventListener('pagehide',save);document.addEventListener('visibilitychange',(
   };
 })();
 init();
+
