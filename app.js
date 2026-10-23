@@ -1,5 +1,5 @@
 // ===== CONFIG =====
-const CFG={DISCORD_CLIENT_ID:'1542247332899455006',GUILD_ID:'1462548365907722252',POLICE_ROLE_ID:'1554679644102332506',STAFF_ROLE_ID:'1554679627342159922',JOIN_URL:''}; // JOIN_URL = your main Discord invite link (optional)
+const CFG={DISCORD_CLIENT_ID:'1542247332899455006',GUILD_ID:'1462548365907722252',POLICE_ROLE_ID:'1554679644102332506',STAFF_ROLE_ID:'1554679627342159922',JOIN_URL:''};
 // Firebase web config (public by design; access is controlled by Firestore rules)
 firebase.initializeApp({apiKey:"AIzaSyAtjPX7727zNlvBh85jzTeAqPs5LfvuYr0",authDomain:"rossite.firebaseapp.com",projectId:"rossite",storageBucket:"rossite.firebasestorage.app",messagingSenderId:"812413188846",appId:"1:812413188846:web:a3e3d7e65697ff290c91ff"});
 const db=firebase.firestore();
@@ -59,11 +59,12 @@ function showBan(b){
     <p class="mu">Using another account or browser to get around a ban is against the Terms of Service (Section 3, Ban Evasion).</p>
     <p class="mu">If you think this is a mistake, contact the staff team on Discord.</p></div>`;
 }
-let DEV=null,BANNED=false;
+let DEV=null,BANNED=false,DOWN=false,SITE=null;
 async function init(){
   $('#view').innerHTML=LOADER();
   const t=token();
   DEV=await deviceIds();
+  const siteP=db.collection('site').doc('status').get().then(d=>d.exists?d.data():null).catch(()=>null);
   let u=null;
   if(t){try{u=await dc('/users/@me',t)}catch{localStorage.removeItem('rp_tok');LOGIN_MSG='Your Discord login expired. Please log in again.'}}
   const flag=getFlag(),{ban,ok}=await findBan(u&&u.id,DEV,flag&&flag.u);
@@ -79,10 +80,71 @@ async function init(){
       tab=['home','chains','bank','terms','mod'].includes(draft.tab)?draft.tab:tab;
       db.collection('devices').doc(u.id).set({ids:firebase.firestore.FieldValue.arrayUnion('v:'+DEV.v,'f:'+DEV.f),name:S.user.name.slice(0,80),updated:Date.now()},{merge:true}).catch(()=>{}); // lets staff ban this person's devices too
     }catch(e){localStorage.removeItem('rp_tok');S.user=null;S.staff=false;LOGIN_MSG='Could not confirm your Discord server membership'+(e&&/^\d+$/.test(e.message)?' (Discord error '+e.message+')':'')+'. You must be a member of our Discord server to log in.'}}
+  SITE=await siteP;
+  if(SITE&&SITE.down&&!S.staff){showDown();watchSite();return}
   render();
   if(LOGIN_MSG)say(LOGIN_MSG);
+  if(SITE&&SITE.down&&S.staff)say('The site is shut down. Only staff can see it. You can reopen it in Moderation.');
   watchBan(u&&u.id);
-  setTimeout(()=>{try{if(!BANNED&&!localStorage.getItem('ros_seen'))startIntro()}catch{}},500);
+  watchSite();
+  startPresence();
+  setTimeout(()=>{try{if(!BANNED&&!DOWN&&!localStorage.getItem('ros_seen'))startIntro()}catch{}},500);
+}
+// ===== site shutdown (staff kill switch) =====
+function showDown(){
+  DOWN=true;
+  $('#nav').innerHTML='';
+  $('#who').innerHTML=S.user?`<span class="user">${esc(S.user.name)} <button class="btn s" onclick="logout()">Log out</button></span>`:`<a class="btn s" href="${loginUrl()}">Staff log in</a>`;
+  $('#view').innerHTML=`<div class="card hero"><div class="kick">TEMPORARILY CLOSED</div><h2>The site is down</h2>
+    <p>The Republic of Stilton website has been shut down for now.</p>
+    ${SITE&&SITE.message?`<p class="mu">${esc(SITE.message)}</p>`:''}
+    <p class="mu">Please check the Discord server for updates.</p></div>`;
+}
+function watchSite(){
+  let prev=!!(SITE&&SITE.down),first=true;
+  db.collection('site').doc('status').onSnapshot(s=>{
+    SITE=s.exists?s.data():null;const now=!!(SITE&&SITE.down);
+    if(first){first=false;if(now===prev)return}
+    if(now&&!S.staff){if(!BANNED)showDown()}
+    else if(!now&&DOWN)location.reload();
+    else if(S.staff&&now!==prev){say(now?'The site is now shut down. Only staff can see it.':'The site is open again.');if(tab==='mod')mod()}
+    prev=now;
+  },()=>{});
+}
+// ===== who is online (a heartbeat while a logged-in page is open and visible) =====
+function startPresence(){
+  if(!S.user)return;
+  const beat=()=>{if(!S.user||BANNED||document.hidden)return;
+    db.collection('presence').doc(S.user.id).set({name:S.user.name.slice(0,80),seen:Date.now(),tab:String(tab).slice(0,20)}).catch(()=>{})};
+  beat();setInterval(beat,120000);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)beat()});
+}
+let ONL=null;
+async function loadOnline(){
+  const box=$('#online');if(!box||tab!=='mod')return;
+  try{const since=Date.now()-5*60000;
+    const q=await db.collection('presence').where('seen','>',since).limit(200).get();
+    const rows=q.docs.map(d=>({id:d.id,...d.data()})).sort((x,y)=>(y.seen||0)-(x.seen||0));
+    box.innerHTML=`<h3>Online now (${rows.length})</h3><p class="mu">People logged in with Discord who have the site open. Updates about every 2 minutes. Entries disappear after 5 minutes.</p>
+     <table><tr><th>User</th><th>Page</th><th>Last seen</th><th></th></tr>${rows.map(x=>`<tr><td><b>${esc(x.name||'—')}</b><br><span class="mu">${esc(x.id)}</span></td><td>${esc(x.tab||'')}</td><td class="mu">${Math.max(0,Math.round((Date.now()-(x.seen||0))/1000))}s ago</td><td><button class="btn s" onclick="fillBan('${safeId(x.id)}')">Ban…</button></td></tr>`).join('')||'<tr><td class="mu" colspan="4">Nobody is logged in right now.</td></tr>'}</table>
+     <p><button class="btn s" onclick="loadOnline()">Refresh</button></p>`;
+  }catch(e){box.innerHTML='<h3>Online now</h3><p class="mu">Could not load: '+esc(e&&e.code==='permission-denied'?'publish the newest Firestore rules':(e&&e.message)||'error')+'</p>'}
+  clearTimeout(ONL);ONL=setTimeout(loadOnline,30000);
+}
+async function loadEconomy(){
+  const box=$('#econ');if(!box||tab!=='mod')return;
+  try{await authed();
+    const [g,t]=await Promise.all([db.collection('ledger').where('type','==','grant').get(),db.collection('ledger').where('type','==','take').get()]);
+    const sum=q=>q.docs.reduce((n,d)=>n+(Number(d.data().amount)||0),0),given=sum(g),taken=sum(t);
+    box.innerHTML=`<h3>Economy</h3><div class="cgrid" style="margin:10px 0 0"><div class="card"><div class="mu">In circulation</div><h3>${SB(given-taken)}</h3></div><div class="card"><div class="mu">Given by staff</div><h3>${SB(given)}</h3></div><div class="card"><div class="mu">Removed by staff</div><h3>${SB(taken)}</h3></div></div>
+     <p class="mu">Money only enters or leaves through staff (${g.size} gives, ${t.size} removals recorded here). Deposits, withdrawals and transfers move money around but never change this total. It counts only what was given through this site's bank.</p><p><button class="btn s" onclick="loadEconomy()">Refresh</button></p>`;
+  }catch(e){box.innerHTML='<h3>Economy</h3><p class="mu">Could not load: '+esc(e&&e.code==='permission-denied'?'publish the newest Firestore rules':(e&&e.message)||'error')+'</p>'}
+}
+const fillBan=id=>{const el=$('#b_id');if(el&&id){el.value=id;el.scrollIntoView({block:'center'})}};
+async function toggleSite(down){
+  if(down&&!confirm('Shut the site down for everyone except staff?'))return;
+  try{await staffWrite('s_status',b=>b.set(db.collection('site').doc('status'),{down,message:(($('#s_msg')&&$('#s_msg').value)||'').trim().slice(0,200),by:S.user.name.slice(0,80),updated:Date.now()}));
+    SITE={down,message:(($('#s_msg')&&$('#s_msg').value)||'').trim().slice(0,200)};say(down?'Site is now shut down. Only staff can see it.':'Site is open again.');mod()}catch(e){say(e.message||fe(e))}
 }
 // Live ban watch: the moment staff bans this account (or a device it uses), reload the page so the ban screen appears.
 function watchBan(uid){
@@ -104,7 +166,7 @@ function render(){
   $('#who').innerHTML=S.user?`<span class="user">${S.user.avatar?`<img src="${esc(S.user.avatar)}">`:''}${esc(S.user.name)}${S.staff?'<span class="badge">Staff</span>':''} <button class="btn s" onclick="logout()">Log out</button></span>`:`<a class="btn" href="${loginUrl()}">Log in with Discord</a>`;
   ({home,chains,bank,terms,mod})[tab]();
 }
-const go=k=>{if(BANNED)return;tab=k;draft.tab=k;say('');render()};
+const go=k=>{if(BANNED||DOWN)return;tab=k;draft.tab=k;say('');render()};
 const needLogin=()=>$('#view').innerHTML=`<div class="card"><h2>Citizen Login</h2><p class="mu">Log in with Discord. We'll check that you're in our server.</p><a class="btn" href="${loginUrl()}">Log in with Discord</a></div>`;
 
 const safeUrl=u=>{try{const x=new URL(String(u||'').trim());return /^https?:$/.test(x.protocol)?x.href:''}catch{return ''}};
@@ -185,6 +247,12 @@ async function mod(){
   $('#view').innerHTML=LOADER(1);
   let list=[];try{list=(await db.collection('bans').get()).docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.created||0)-(a.created||0))}catch(e){say(fe(e))}
   $('#view').innerHTML=`<div class="card"><h2>Moderation</h2><p class="mu">Banned people cannot use the site. Banning someone also bans every device they have logged in from.</p></div>
+   <div class="card"><h3>Site status</h3><p>Right now the site is <b>${SITE&&SITE.down?'SHUT DOWN':'OPEN'}</b>.</p>
+    <p class="mu">Shutting down shows a closed page to everyone except staff, and freezes the bank and new chain applications. Uses the staff PIN in the box below.</p>
+    <label>Message shown to visitors (optional)</label><input id="s_msg" maxlength="200" placeholder="e.g. Back soon, we are fixing something." value="${esc((SITE&&SITE.message)||'')}">
+    <p>${SITE&&SITE.down?'<button class="btn" onclick="toggleSite(false)">Reopen the site</button>':'<button class="btn" onclick="toggleSite(true)">Shut the site down</button>'}</p></div>
+   <div class="card" id="econ"><h3>Economy</h3><div class="loader"><span class="spin"></span><span>Counting…</span></div></div>
+   <div class="card" id="online"><h3>Online now</h3><div class="loader"><span class="spin"></span><span>Loading…</span></div></div>
    <div class="card"><h3>Ban someone</h3>
     <div class="row"><div><label>Discord user ID *</label><input id="b_id" placeholder="e.g. 123456789012345678" inputmode="numeric"></div><div><label>Reason (shown to them)</label><input id="b_reason" maxlength="200"></div></div>
     <div class="row"><div><label>Staff PIN *</label><input id="b_pin" type="password" name="ros-staff-pin" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" value="${esc(pin())}"></div><div><label>&nbsp;</label><button class="btn s" onclick="testPin()">Test PIN</button></div></div>
@@ -195,6 +263,7 @@ async function mod(){
     <label>Note</label><input id="g_note" maxlength="100">
     <p><button class="btn" onclick="bankGrant('grant')">Give cash</button> <button class="btn s" onclick="bankGrant('take')">Remove cash</button> <button class="btn s" onclick="bankReset()">Unlink account</button></p></div>
    <div class="card"><h3>Banned (${list.length})</h3><table><tr><th>User</th><th>Reason</th><th>By</th><th>Devices</th><th></th></tr>${list.map(x=>`<tr><td><b>${esc(x.name||'—')}</b><br><span class="mu">${esc(x.user_id)}</span></td><td>${esc(x.reason||'')}</td><td>${esc(x.by_name||'')}</td><td>${(x.devices||[]).length}</td><td><button class="btn s" onclick="doUnban('${safeId(x.user_id)}')">Unban</button></td></tr>`).join('')||'<tr><td class="mu" colspan="5">Nobody is banned.</td></tr>'}</table></div>`;
+  loadOnline();loadEconomy();
 }
 async function doBan(){
   const id=$('#b_id').value.replace(/\D/g,'');
@@ -412,7 +481,7 @@ addEventListener('pagehide',save);document.addEventListener('visibilitychange',(
   }
   function end(){clean();go('home');scrollTo(0,0)}
   window.startTour=function(){
-    if(BANNED)return;clean();mark();steps=build();i=0;
+    if(BANNED||DOWN)return;clean();mark();steps=build();i=0;
     ov=document.createElement('div');ov.className='tclick';document.body.appendChild(ov);
     hl=document.createElement('div');hl.className='th';document.body.appendChild(hl);
     tip=document.createElement('div');tip.className='tt';tip.setAttribute('role','dialog');document.body.appendChild(tip);
@@ -422,4 +491,3 @@ addEventListener('pagehide',save);document.addEventListener('visibilitychange',(
   };
 })();
 init();
-
