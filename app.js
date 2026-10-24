@@ -1,5 +1,5 @@
 // ===== CONFIG =====
-const CFG={DISCORD_CLIENT_ID:'1542247332899455006',GUILD_ID:'1462548365907722252',POLICE_ROLE_ID:'1554679644102332506',STAFF_ROLE_ID:'1554679627342159922',JOIN_URL:''};
+const CFG={DISCORD_CLIENT_ID:'1542247332899455006',GUILD_ID:'1462548365907722252',POLICE_ROLE_ID:'1554679644102332506',STAFF_ROLE_ID:'1554679627342159922',JOIN_URL:''}; // JOIN_URL = your main Discord invite link (optional)
 // Firebase web config (public by design; access is controlled by Firestore rules)
 firebase.initializeApp({apiKey:"AIzaSyAtjPX7727zNlvBh85jzTeAqPs5LfvuYr0",authDomain:"rossite.firebaseapp.com",projectId:"rossite",storageBucket:"rossite.firebasestorage.app",messagingSenderId:"812413188846",appId:"1:812413188846:web:a3e3d7e65697ff290c91ff"});
 const db=firebase.firestore();
@@ -84,7 +84,7 @@ async function init(){
   if(SITE&&SITE.down&&!S.staff){showDown();watchSite();return}
   render();
   if(LOGIN_MSG)say(LOGIN_MSG);
-  if(SITE&&SITE.down&&S.staff)say('The site is shut down. Only staff can see it. You can reopen it in Moderation.');
+  if(SITE&&SITE.down&&S.staff)say('The site is shut down. Only staff can see it. You can reopen it in the Staff tab.');
   watchBan(u&&u.id);
   watchSite();
   startPresence();
@@ -125,22 +125,21 @@ async function loadOnline(){
   try{const since=Date.now()-5*60000;
     const q=await db.collection('presence').where('seen','>',since).limit(200).get();
     const rows=q.docs.map(d=>({id:d.id,...d.data()})).sort((x,y)=>(y.seen||0)-(x.seen||0));
-    box.innerHTML=`<h3>Online now (${rows.length})</h3><p class="mu">People logged in with Discord who have the site open. Updates about every 2 minutes. Entries disappear after 5 minutes.</p>
-     <table><tr><th>User</th><th>Page</th><th>Last seen</th><th></th></tr>${rows.map(x=>`<tr><td><b>${esc(x.name||'—')}</b><br><span class="mu">${esc(x.id)}</span></td><td>${esc(x.tab||'')}</td><td class="mu">${Math.max(0,Math.round((Date.now()-(x.seen||0))/1000))}s ago</td><td><button class="btn s" onclick="fillBan('${safeId(x.id)}')">Ban…</button></td></tr>`).join('')||'<tr><td class="mu" colspan="4">Nobody is logged in right now.</td></tr>'}</table>
-     <p><button class="btn s" onclick="loadOnline()">Refresh</button></p>`;
+    const to=$('#t_online');if(to)to.textContent=rows.length;box.innerHTML=`<h3>Online now (${rows.length})</h3><p class="mu">People logged in with Discord who have the site open. Updates about every 2 minutes. Entries disappear after 5 minutes.</p>
+     <table class="tbl"><tr><th>User</th><th>Page</th><th>Last seen</th><th></th></tr>${rows.map(x=>`<tr><td><b>${esc(x.name||'—')}</b><br><span class="mu">${esc(x.id)}</span></td><td>${esc(x.tab||'')}</td><td class="mu">${Math.max(0,Math.round((Date.now()-(x.seen||0))/1000))}s ago</td><td style="text-align:right"><button class="btn s" onclick="fillBan('${safeId(x.id)}')">Ban</button></td></tr>`).join('')||'<tr><td class="mu" colspan="4">Nobody is logged in right now.</td></tr>'}</table>
+     <p><button class="lnk" onclick="loadOnline()">Refresh</button></p>`;
   }catch(e){box.innerHTML='<h3>Online now</h3><p class="mu">Could not load: '+esc(e&&e.code==='permission-denied'?'publish the newest Firestore rules':(e&&e.message)||'error')+'</p>'}
   clearTimeout(ONL);ONL=setTimeout(loadOnline,30000);
 }
 async function loadEconomy(){
-  const box=$('#econ');if(!box||tab!=='mod')return;
+  const te=$('#t_econ');if(!te||tab!=='mod')return;
   try{await authed();
     const [g,t]=await Promise.all([db.collection('ledger').where('type','==','grant').get(),db.collection('ledger').where('type','==','take').get()]);
     const sum=q=>q.docs.reduce((n,d)=>n+(Number(d.data().amount)||0),0),given=sum(g),taken=sum(t);
-    box.innerHTML=`<h3>Economy</h3><div class="cgrid" style="margin:10px 0 0"><div class="card"><div class="mu">In circulation</div><h3>${SB(given-taken)}</h3></div><div class="card"><div class="mu">Given by staff</div><h3>${SB(given)}</h3></div><div class="card"><div class="mu">Removed by staff</div><h3>${SB(taken)}</h3></div></div>
-     <p class="mu">Money only enters or leaves through staff (${g.size} gives, ${t.size} removals recorded here). Deposits, withdrawals and transfers move money around but never change this total. It counts only what was given through this site's bank.</p><p><button class="btn s" onclick="loadEconomy()">Refresh</button></p>`;
-  }catch(e){box.innerHTML='<h3>Economy</h3><p class="mu">Could not load: '+esc(e&&e.code==='permission-denied'?'publish the newest Firestore rules':(e&&e.message)||'error')+'</p>'}
+    te.textContent=SB(given-taken);const c=$('#t_econ_s');if(c)c.textContent=g.size+' gives · '+t.size+' removals by staff';
+  }catch(e){te.textContent='—';const c=$('#t_econ_s');if(c)c.textContent=e&&e.code==='permission-denied'?'publish the newest rules':'could not load'}
 }
-const fillBan=id=>{const el=$('#b_id');if(el&&id){el.value=id;el.scrollIntoView({block:'center'})}};
+const fillBan=id=>{DT='bans';mod().then(()=>{const el=$('#b_id');if(el&&id){el.value=id;el.scrollIntoView({block:'center'})}})};
 async function toggleSite(down){
   if(down&&!confirm('Shut the site down for everyone except staff?'))return;
   try{await staffWrite('s_status',b=>b.set(db.collection('site').doc('status'),{down,message:(($('#s_msg')&&$('#s_msg').value)||'').trim().slice(0,200),by:S.user.name.slice(0,80),updated:Date.now()}));
@@ -160,10 +159,11 @@ function render(){
   const tabs=[['home','Home'],['chains','Chain Servers']];
   if(S.user)tabs.push(['bank','Bank']);
   tabs.push(['terms','Terms']);
-  if(S.staff)tabs.push(['mod','Moderation']);
+  if(S.staff)tabs.push(['mod','Staff']);
   if(!tabs.some(x=>x[0]==tab))tab='home';
   $('#nav').innerHTML=tabs.map(([k,l])=>`<button data-k="${k}" class="${k==tab?'on':''}" onclick="go('${k}')">${l}</button>`).join('');
   $('#who').innerHTML=S.user?`<span class="user">${S.user.avatar?`<img src="${esc(S.user.avatar)}">`:''}${esc(S.user.name)}${S.staff?'<span class="badge">Staff</span>':''} <button class="btn s" onclick="logout()">Log out</button></span>`:`<a class="btn" href="${loginUrl()}">Log in with Discord</a>`;
+  document.body.classList.toggle('wide',tab==='mod');
   ({home,chains,bank,terms,mod})[tab]();
 }
 const go=k=>{if(BANNED||DOWN)return;tab=k;draft.tab=k;say('');render()};
@@ -226,7 +226,7 @@ async function staffWrite(id,fn){
   if(!p)throw new Error('Enter the staff PIN first');
   const ref=db.collection('proofs').doc(id);
   // step 1: check the PIN on its own, so a wrong PIN can be told apart from a blocked change
-  try{await ref.set({pin:p})}catch(e){if(e&&e.code==='permission-denied'){PIN='';throw new Error('Staff PIN rejected. Use the Test PIN button on the Moderation tab to check it.')}throw e}
+  try{await ref.set({pin:p})}catch(e){if(e&&e.code==='permission-denied'){PIN='';throw new Error('Staff PIN rejected. Check it and try again.')}throw e}
   await ref.delete().catch(()=>{}); // no leftover proof, so it cannot be reused
   PIN=p;
   // step 2: the real change, sent together with the PIN proof
@@ -235,36 +235,113 @@ async function staffWrite(id,fn){
   catch(e){if(e&&e.code==='permission-denied')throw new Error('Your PIN is correct, but the database rules blocked this change ('+id+'). Check the Discord ID and that the newest rules are published.');throw e}
   finally{ref.delete().catch(()=>{})}
 }
-async function testPin(){
-  const p=(($('#b_pin')&&$('#b_pin').value)||PIN).trim();
-  if(!p)return say('Type the staff PIN in the box first.');
-  const ref=db.collection('proofs').doc('pintest_'+Date.now());
-  try{await ref.set({pin:p});ref.delete().catch(()=>{});PIN=p;say('PIN accepted. The database recognises it.')}
-  catch(e){say(e&&e.code==='permission-denied'?'PIN rejected. It does not match the pin in config/staff (or that document is missing, or its pin field is not a string).':(e.message||fe(e)))}
+let DT='over',PULSE=15,PT=null;
+const dashTab=k=>{DT=k;mod()};
+const sid=x=>{x=String(x||'');return x.length>12?x.slice(0,4)+'…'+x.slice(-4):x};
+const ago=t=>{const s=Math.max(0,Math.round((Date.now()-(t||0))/1000));return s<60?s+'s ago':s<3600?Math.floor(s/60)+'m ago':s<86400?Math.floor(s/3600)+'h ago':Math.floor(s/86400)+'d ago'};
+async function healthChecks(){
+  const one=async(name,fn,ok)=>{try{const r=await fn();return {name,ok:ok?ok(r):true,note:''}}catch(e){return {name,ok:false,note:e&&e.code==='permission-denied'?'blocked by rules':(e&&e.message)||'error'}}};
+  const c=db.collection.bind(db);
+  const r=await Promise.all([
+    one('Database reachable',()=>c('bans').limit(1).get()),
+    one('Site status readable',()=>c('site').doc('status').get()),
+    one('Site open to the public',async()=>SITE,x=>!(x&&x.down)),
+    one('Online list readable',()=>c('presence').limit(1).get()),
+    one('Chain servers readable',()=>c('chains').limit(1).get()),
+    one('Bank sign-in works',()=>authed()),
+    one('Bank ledger readable',async()=>{await authed();return c('ledger').limit(1).get()})]);
+  return r;
+}
+async function runHealth(){
+  const box=$('#health');if(!box)return;
+  box.innerHTML='<div class="loader"><span class="spin"></span><span>Running checks…</span></div>';
+  const r=await healthChecks();if(!$('#health'))return;
+  const ok=r.filter(x=>x.ok).length,score=Math.round(ok/r.length*100),good=ok===r.length,col=good?'#22c55e':score>=70?'#f59e0b':'#ef4444';
+  box.innerHTML=`<div class="health"><div class="score" style="color:${col}">${score}<small>/ 100</small></div>
+    <div><h3>${good?'All systems operational':'Attention needed'}</h3><p class="sub" style="margin:0">${good?'Every check passed. The site and the bank are working.':(r.length-ok)+' of '+r.length+' checks failed. Open the list below.'}</p><div class="hbar" style="--c:${col}"><i style="width:${score}%"></i></div></div>
+    <div style="text-align:right"><div class="mu" style="font-size:.85em">Checked ${new Date().toLocaleTimeString()}</div><button class="lnk" onclick="runHealth()">Run checks again</button></div></div>
+    <details class="hd"><summary>${ok} of ${r.length} checks passed</summary><ul>${r.map(x=>`<li class="${x.ok?'ok':'bad'}"><b>${x.ok?'Pass':'Fail'}</b>${esc(x.name)}${x.note?` <span class="mu">(${esc(x.note)})</span>`:''}</li>`).join('')}</ul></details>`;
+}
+async function loadPulse(){
+  const box=$('#pulse');if(!box||tab!=='mod')return;
+  let rows=[];
+  try{await authed();const q=await db.collection('ledger').orderBy('at','desc').limit(PULSE).get();rows=q.docs.map(d=>d.data())}catch(e){}
+  const items=rows.map(t=>{let tag,cls='',tx;
+    if(t.type==='deposit'){tag='Deposit';tx=`<b>${esc(sid(t.from))}</b> deposited ${esc(SB(t.amount))}`}
+    else if(t.type==='withdraw'){tag='Withdraw';tx=`<b>${esc(sid(t.from))}</b> withdrew ${esc(SB(t.amount))}`}
+    else if(t.type==='grant'){tag='Staff';cls='a';tx=`Staff gave ${esc(SB(t.amount))} to <b>${esc(sid(t.to))}</b>`}
+    else if(t.type==='take'){tag='Staff';cls='a';tx=`Staff removed ${esc(SB(t.amount))} from <b>${esc(sid(t.to))}</b>`}
+    else{tag='Transfer';cls='g';tx=`<b>${esc(sid(t.from))}</b> sent ${esc(SB(t.amount))} to <b>${esc(sid(t.to))}</b>`}
+    return {at:t.at||0,tag,cls,tx}});
+  (window.__bans||[]).slice(0,10).forEach(b=>items.push({at:b.created||0,tag:'Ban',cls:'r',tx:`<b>${esc(b.name||sid(b.user_id))}</b> was banned by ${esc(b.by_name||'staff')}`}));
+  items.sort((a,b)=>b.at-a.at);const shown=items.slice(0,PULSE);
+  box.innerHTML=`<table class="tbl"><tr><th>Type</th><th>Event</th><th style="text-align:right">When</th></tr>${shown.map(x=>`<tr><td><span class="tag ${x.cls}">${x.tag}</span></td><td>${x.tx}</td><td class="mu" style="text-align:right;white-space:nowrap">${ago(x.at)}</td></tr>`).join('')||'<tr><td colspan="3" class="mu">Nothing has happened yet.</td></tr>'}</table>`+(rows.length>=PULSE?'<p class="more"><button class="lnk" onclick="PULSE+=15;loadPulse()">Load more</button></p>':'');
+  clearTimeout(PT);PT=setTimeout(loadPulse,30000);
+}
+async function lookupUser(){
+  const id=($('#lk_id').value||'').replace(/\D/g,'');const box=$('#lk_out');
+  if(id.length<15||id.length>25){box.innerHTML='<p class="mu">Enter a Discord user ID.</p>';return}
+  box.innerHTML='<div class="loader"><span class="spin"></span><span>Looking up…</span></div>';
+  try{await authed();
+    const [ban,pre,dev,a,b,c,d]=await Promise.all([db.collection('bans').doc('u_'+id).get(),db.collection('presence').doc(id).get(),db.collection('devices').doc(id).get(),
+      db.collection('ledger').where('from','==',id).limit(10).get(),db.collection('ledger').where('to','==',id).limit(10).get(),
+      db.collection('ledger').where('from','==','c_'+id).limit(10).get(),db.collection('ledger').where('to','==','c_'+id).limit(10).get()]);
+    const m={};[a,b,c,d].forEach(q=>q.docs.forEach(x=>m[x.id]=x.data()));const tx=Object.values(m).sort((p,q)=>(q.at||0)-(p.at||0)).slice(0,12);
+    const bd=ban.exists?ban.data():null,pd=pre.exists?pre.data():null,dd=dev.exists?dev.data():null;
+    box.innerHTML=`<div class="kpis"><div class="kpi"><div class="lbl">Status</div><div class="big" style="font-size:1.4em;color:${bd?'#ff8a8a':'#7ee2a1'}">${bd?'Banned':'Not banned'}</div><div class="mu">${bd?esc(bd.reason||'No reason given'):'No ban on record'}</div></div>
+      <div class="kpi"><div class="lbl">Last seen online</div><div class="big" style="font-size:1.4em">${pd?ago(pd.seen):'Not recently'}</div><div class="mu">${pd?esc(pd.name||''):esc((dd&&dd.name)||'')}</div></div>
+      <div class="kpi"><div class="lbl">Known devices</div><div class="big" style="font-size:1.4em">${dd?(dd.ids||[]).length:0}</div><div class="mu">${bd?'':`<button class="lnk" onclick="fillBan('${safeId(id)}')">Ban this user</button>`}</div></div></div>
+      <div class="panel"><h3>Recent bank activity</h3><p class="sub">Personal account and company account (c_${esc(sid(id))}).</p><table class="tbl"><tr><th>Type</th><th>From</th><th>To</th><th>Amount</th><th style="text-align:right">When</th></tr>${tx.map(t=>`<tr><td><span class="tag">${esc(t.type)}</span></td><td>${esc(sid(t.from))}</td><td>${esc(sid(t.to))}</td><td>${esc(SB(t.amount))}</td><td class="mu" style="text-align:right">${ago(t.at)}${t.note?' · '+esc(t.note):''}</td></tr>`).join('')||'<tr><td colspan="5" class="mu">No bank activity.</td></tr>'}</table></div>`;
+  }catch(e){box.innerHTML='<p class="mu">Could not look up: '+esc(e&&e.code==='permission-denied'?'publish the newest rules':(e&&e.message)||'error')+'</p>'}
 }
 async function mod(){
   if(!S.staff)return go('home');
   $('#view').innerHTML=LOADER(1);
-  let list=[];try{list=(await db.collection('bans').get()).docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.created||0)-(a.created||0))}catch(e){say(fe(e))}
-  $('#view').innerHTML=`<div class="card"><h2>Moderation</h2><p class="mu">Banned people cannot use the site. Banning someone also bans every device they have logged in from.</p></div>
-   <div class="card"><h3>Site status</h3><p>Right now the site is <b>${SITE&&SITE.down?'SHUT DOWN':'OPEN'}</b>.</p>
-    <p class="mu">Shutting down shows a closed page to everyone except staff, and freezes the bank and new chain applications. Uses the staff PIN in the box below.</p>
-    <label>Message shown to visitors (optional)</label><input id="s_msg" maxlength="200" placeholder="e.g. Back soon, we are fixing something." value="${esc((SITE&&SITE.message)||'')}">
-    <p>${SITE&&SITE.down?'<button class="btn" onclick="toggleSite(false)">Reopen the site</button>':'<button class="btn" onclick="toggleSite(true)">Shut the site down</button>'}</p></div>
-   <div class="card" id="econ"><h3>Economy</h3><div class="loader"><span class="spin"></span><span>Counting…</span></div></div>
-   <div class="card" id="online"><h3>Online now</h3><div class="loader"><span class="spin"></span><span>Loading…</span></div></div>
-   <div class="card"><h3>Ban someone</h3>
+  let list=[],pend=0;
+  try{list=(await db.collection('bans').get()).docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.created||0)-(a.created||0))}catch(e){say(fe(e))}
+  window.__bans=list;
+  try{pend=(await db.collection('chains').get()).docs.filter(d=>{const r=d.data().review;return r==='pending'||!r}).length}catch{}
+  const down=!!(SITE&&SITE.down);
+  const nav=[['over','Overview'],['look','Lookup'],['bank','Bank'],['bans','Bans'],['site','Site']];
+  const head=`<div class="st-head"><div class="st-title"><h2>Staff Console</h2><span>Republic of Stilton</span></div>
+    <div class="st-tabs">${nav.map(([k,l])=>`<button class="${DT===k?'on':''}" onclick="dashTab('${k}')">${l}${k==='bans'?`<b>${list.length}</b>`:''}</button>`).join('')}</div>
+    <div class="st-r"><span class="st-stat ${down?'bad':''}">${down?'Site shut down':'Site operational'}</span><input id="b_pin" type="password" placeholder="Staff PIN" title="Staff PIN, used for every action" name="ros-staff-pin" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" oninput="PIN=this.value.trim()" value="${esc(pin())}"></div></div>`;
+  let body='';
+  if(DT==='over')body=`<div class="panel" id="health"></div>
+    <div class="kpis">
+      <div class="kpi"><div class="lbl">Online now</div><div class="big" id="t_online">…</div><div class="mu">logged in right now</div></div>
+      <div class="kpi"><div class="lbl">SB in circulation</div><div class="big" id="t_econ">…</div><div class="mu" id="t_econ_s">counting…</div></div>
+      <div class="kpi click" onclick="dashTab('bans')"><div class="lbl">Banned</div><div class="big">${list.length}</div><div class="mu">people banned</div></div>
+      <div class="kpi click" onclick="go('chains')"><div class="lbl">Chain applications</div><div class="big">${pend}</div><div class="mu">waiting for review</div></div></div>
+    <div class="cols">
+      <div class="panel"><div class="hl"><h3>Recent activity</h3><span class="mu" style="font-size:.85em">Refreshes every 30 seconds</span></div><p class="sub">Bank activity and bans, newest first.</p><div id="pulse"><div class="loader"><span class="spin"></span><span>Loading…</span></div></div></div>
+      <div class="panel"><h3>Actions</h3><p class="sub">Common staff tasks.</p><div class="acts">
+        <button onclick="copySite()">Copy site link</button>
+        <button onclick="dashTab('site')">${down?'Reopen the site':'Shut the site down'}</button>
+        <button onclick="dashTab('bans')">Ban a user</button>
+        <button onclick="dashTab('bank')">Give or remove cash</button>
+        <button onclick="dashTab('look')">Look up a user</button>
+        <button onclick="go('chains')">Review chain applications</button></div></div></div>
+    <div class="panel" id="online" style="margin-top:1.2em"><h3>Online now</h3><div class="loader"><span class="spin"></span><span>Loading…</span></div></div>`;
+  else if(DT==='look')body=`<div class="panel"><h3>Look up a user</h3><p class="sub">See whether someone is banned, when they were last online, how many devices are on record and their recent bank activity.</p>
+    <div class="row"><div><label>Discord user ID</label><input id="lk_id" inputmode="numeric" placeholder="e.g. 123456789012345678" onkeydown="if(event.key==='Enter')lookupUser()"></div><div><label>&nbsp;</label><button class="btn" onclick="lookupUser()">Look up</button></div></div></div><div id="lk_out"></div>`;
+  else if(DT==='bank')body=`<div class="panel"><h3>Bank</h3><p class="sub">Money only enters the economy here. The person must have opened their bank account on the Bank tab first. For a company account enter its ID, which starts with c_. Uses the staff PIN at the top right.</p>
+    <div class="row"><div><label>Account ID *</label><input id="g_id" placeholder="Discord ID, or c_ID for a company"></div><div><label>Amount (SB) *</label><input id="g_amt" inputmode="numeric"></div></div>
+    <label>Note</label><input id="g_note" maxlength="100">
+    <p><button class="btn" onclick="bankGrant('grant')">Give cash</button> <button class="btn s" onclick="bankGrant('take')">Remove cash</button> <button class="btn s" onclick="bankReset()">Unlink account</button></p></div>`;
+  else if(DT==='bans')body=`<div class="panel"><h3>Ban a user</h3><p class="sub">Banning someone also bans every device they have logged in from. Uses the staff PIN at the top right.</p>
     <div class="row"><div><label>Discord user ID *</label><input id="b_id" placeholder="e.g. 123456789012345678" inputmode="numeric"></div><div><label>Reason (shown to them)</label><input id="b_reason" maxlength="200"></div></div>
-    <div class="row"><div><label>Staff PIN *</label><input id="b_pin" type="password" name="ros-staff-pin" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" value="${esc(pin())}"></div><div><label>&nbsp;</label><button class="btn s" onclick="testPin()">Test PIN</button></div></div>
     <label style="display:flex;gap:10px;align-items:flex-start;text-transform:none;letter-spacing:0;font-size:.9rem"><input id="b_fp" type="checkbox" checked style="width:auto;margin-top:3px"><span>Also ban their hardware fingerprint <span class="mu">(stronger, but could also block someone with an identical device)</span></span></label>
     <p><button class="btn" onclick="doBan()">Ban</button></p></div>
-   <div class="card"><h3>Bank (staff)</h3><p class="mu">Money only enters the economy here. The person must have opened their bank account on the Bank tab first. Uses the staff PIN above.</p>
-    <div class="row"><div><label>Discord user ID *</label><input id="g_id" inputmode="numeric"></div><div><label>Amount (SB) *</label><input id="g_amt" inputmode="numeric"></div></div>
-    <label>Note</label><input id="g_note" maxlength="100">
-    <p><button class="btn" onclick="bankGrant('grant')">Give cash</button> <button class="btn s" onclick="bankGrant('take')">Remove cash</button> <button class="btn s" onclick="bankReset()">Unlink account</button></p></div>
-   <div class="card"><h3>Banned (${list.length})</h3><table><tr><th>User</th><th>Reason</th><th>By</th><th>Devices</th><th></th></tr>${list.map(x=>`<tr><td><b>${esc(x.name||'—')}</b><br><span class="mu">${esc(x.user_id)}</span></td><td>${esc(x.reason||'')}</td><td>${esc(x.by_name||'')}</td><td>${(x.devices||[]).length}</td><td><button class="btn s" onclick="doUnban('${safeId(x.user_id)}')">Unban</button></td></tr>`).join('')||'<tr><td class="mu" colspan="5">Nobody is banned.</td></tr>'}</table></div>`;
-  loadOnline();loadEconomy();
+    <div class="panel"><h3>Banned users (${list.length})</h3><table class="tbl"><tr><th>User</th><th>Reason</th><th>By</th><th>Devices</th><th></th></tr>${list.map(x=>`<tr><td><b>${esc(x.name||'—')}</b><br><span class="mu">${esc(x.user_id)}</span></td><td>${esc(x.reason||'')}</td><td>${esc(x.by_name||'')}</td><td>${(x.devices||[]).length}</td><td style="text-align:right"><button class="btn s" onclick="doUnban('${safeId(x.user_id)}')">Unban</button></td></tr>`).join('')||'<tr><td class="mu" colspan="5">Nobody is banned.</td></tr>'}</table></div>`;
+  else body=`<div class="panel"><h3>Site status</h3><p>The site is currently <b>${down?'SHUT DOWN':'OPEN'}</b>.</p>
+    <p class="sub">Shutting down shows a closed page to everyone except staff, and freezes the bank and new chain applications. Uses the staff PIN at the top right.</p>
+    <label>Message shown to visitors (optional)</label><input id="s_msg" maxlength="200" placeholder="e.g. Back soon, we are fixing something." value="${esc((SITE&&SITE.message)||'')}">
+    <p>${down?'<button class="btn" onclick="toggleSite(false)">Reopen the site</button>':'<button class="btn" onclick="toggleSite(true)">Shut the site down</button>'}</p></div>`;
+  $('#view').innerHTML=`<div class="st">${head}${body}</div>`;
+  if(DT==='over'){PULSE=15;runHealth();loadPulse();loadOnline();loadEconomy()}
 }
+function copySite(){const u=location.origin+location.pathname;(navigator.clipboard?navigator.clipboard.writeText(u):Promise.reject()).then(()=>say('Site link copied.'),()=>say(u))}
 async function doBan(){
   const id=$('#b_id').value.replace(/\D/g,'');
   if(id.length<15)return say('Enter the numeric Discord user ID (right-click the user, Copy User ID)');
@@ -282,6 +359,8 @@ async function doUnban(id){if(!id||!confirm('Unban '+id+'?'))return;
 const SB=n=>Number(n||0).toLocaleString()+' SB';
 const FV=()=>firebase.firestore.FieldValue;
 const newId=c=>db.collection(c).doc().id;
+const aid=v=>{v=String(v||'').trim();const m=v.match(/^c_?(\d{15,25})$/i);return m?'c_'+m[1]:v.replace(/\D/g,'')};
+const aidOk=v=>/^(c_)?\d{15,25}$/.test(v);
 const amt=v=>{const n=Number(String(v||'').replace(/[, ]/g,''));return Number.isInteger(n)&&n>0&&n<=1e9?n:0};
 async function authed(){
   if(!firebase.auth)throw new Error('Bank is not set up: firebase-auth-compat.js is missing from index.html.');
@@ -290,11 +369,12 @@ async function authed(){
   return a.currentUser;
 }
 const bankErr=(e,type)=>e&&e.code==='permission-denied'?(type==='transfer'?'Transfer blocked. Check that you have enough in the bank and that the recipient has opened their own bank account.':type==='deposit'?'Blocked. Check that you have enough cash.':type==='withdraw'?'Blocked. Check that you have enough in the bank.':'Blocked by the database rules.'):(e&&e.message)||'Database error';
+let BK='me';
 async function bank(){
   if(!S.user){$('#view').innerHTML=`<div class="card"><h2>Bank</h2><p class="mu">Log in with Discord to use the bank.</p><a class="btn" href="${loginUrl()}">Log in with Discord</a></div>`;return}
   $('#view').innerHTML=LOADER(1);
-  const id=S.user.id;let acct=null,state='ok';
-  try{await authed();const d=await db.collection('accounts').doc(id).get();
+  const pid=S.user.id,cid='c_'+pid;let acct=null,comp=null,coLocked=false,state='ok';
+  try{await authed();const d=await db.collection('accounts').doc(pid).get();
     if(!d.exists)state='new';else{acct=d.data();if(acct.owner==='')state='claim'}
   }catch(e){if(e&&e.code==='permission-denied')state='locked';else{state='err';say(e.message||fe(e))}}
   if(state!=='ok'){
@@ -303,18 +383,27 @@ async function bank(){
       locked:['Account locked to another browser','This bank account is linked to a different browser or device. If that was you (for example you cleared your browser data), ask staff to reset it, then come back and claim it.','',''],
       err:['Bank unavailable','Something went wrong. Reload the page and try again.','','']}[state];
     $('#view').innerHTML=`<div class="card"><h2>${m[0]}</h2><p class="mu">${esc(m[1])}</p>${m[2]?`<button class="btn" onclick="${m[3]}">${m[2]}</button>`:''}</div>`;return}
+  try{const d=await db.collection('accounts').doc(cid).get();if(d.exists)comp=d.data()}catch(e){if(e&&e.code==='permission-denied')coLocked=true}
+  if(comp&&comp.owner==='')coLocked=true;
+  if(BK==='co'&&(!comp||coLocked))BK='me';
+  const id=BK==='co'?cid:pid,cur=BK==='co'?comp:acct;
   let hist=[];try{const [x,y]=await Promise.all([db.collection('ledger').where('from','==',id).limit(25).get(),db.collection('ledger').where('to','==',id).limit(25).get()]);const m={};[...x.docs,...y.docs].forEach(d=>m[d.id]=d.data());hist=Object.values(m).sort((p,q)=>(q.at||0)-(p.at||0)).slice(0,20)}catch{}
   const line=t=>{const n=SB(t.amount);
     if(t.type==='deposit')return['Deposit',n,'+'];if(t.type==='withdraw')return['Withdrawal',n,'-'];
     if(t.type==='grant')return['Received from staff',n,'+'];if(t.type==='take')return['Removed by staff',n,'-'];
     return t.from===id?['Sent to '+t.to,n,'-']:['Received from '+t.from,n,'+']};
-  $('#view').innerHTML=`<div class="card"><h2>Bank</h2><p class="mu">StiltonBux (SB) &bull; ${esc(S.user.name)}</p>
-    <div class="cgrid" style="margin:14px 0 0"><div class="card"><div class="mu">Cash</div><h3>${SB(acct.cash)}</h3></div><div class="card"><div class="mu">Bank</div><h3>${SB(acct.bank)}</h3></div><div class="card"><div class="mu">Total</div><h3>${SB((acct.cash||0)+(acct.bank||0))}</h3></div></div></div>
+  const switcher=`<p style="margin:14px 0 0"><button class="btn${BK==='me'?'':' s'}" onclick="BK='me';bank()">Personal</button> ${comp&&!coLocked?`<button class="btn${BK==='co'?'':' s'}" onclick="BK='co';bank()">Company: ${esc(String(comp.name||'').slice(0,40))}</button>`:''}</p>`;
+  const newco=!comp?`<div class="card"><h3>Company account</h3><p class="mu">You can open <b>one</b> extra account for a company or business. It has its own cash and bank balance and its own ID, so people can pay your company. This cannot be undone, and the name cannot be changed later.</p>
+      <label>Company name *</label><input id="co_name" maxlength="40" placeholder="e.g. Stilton Motors"><p><button class="btn" onclick="makeCompany()">Create company account</button></p></div>`
+    :coLocked?`<div class="card"><h3>Company account</h3><p class="mu">Your company account is linked to a different browser or was reset. Ask staff to unlink it (ID ${esc(cid)}), then claim it here.</p><button class="btn s" onclick="claimCompany()">Claim company account</button></div>`:'';
+  $('#view').innerHTML=`<div class="card"><h2>${BK==='co'?esc(String(cur.name||'Company')):'Bank'}</h2><p class="mu">StiltonBux (SB) &bull; ${BK==='co'?'Company account of '+esc(S.user.name):esc(S.user.name)}<br>Account ID to give others: <b>${esc(id)}</b></p>${switcher}
+    <div class="cgrid" style="margin:14px 0 0"><div class="card"><div class="mu">Cash</div><h3>${SB(cur.cash)}</h3></div><div class="card"><div class="mu">Bank</div><h3>${SB(cur.bank)}</h3></div><div class="card"><div class="mu">Total</div><h3>${SB((cur.cash||0)+(cur.bank||0))}</h3></div></div></div>
    <div class="cgrid">
-    <div class="card"><h3>Deposit</h3><p class="mu">Move cash into your bank.</p><input id="k_dep" inputmode="numeric" placeholder="Amount"><p><button class="btn" onclick="bankOp('deposit')">Deposit</button></p></div>
-    <div class="card"><h3>Withdraw</h3><p class="mu">Take money out of your bank as cash.</p><input id="k_wd" inputmode="numeric" placeholder="Amount"><p><button class="btn" onclick="bankOp('withdraw')">Withdraw</button></p></div>
-    <div class="card"><h3>Transfer</h3><p class="mu">Send money from your bank to another member. They must have opened their bank account.</p>
-      <input id="k_to" inputmode="numeric" placeholder="Their Discord user ID"><input id="k_amt" inputmode="numeric" placeholder="Amount" style="margin-top:8px"><input id="k_note" maxlength="100" placeholder="Note (optional)" style="margin-top:8px"><p><button class="btn" onclick="bankOp('transfer')">Send</button></p></div></div>
+    <div class="card"><h3>Deposit</h3><p class="mu">Move cash into the bank.</p><input id="k_dep" inputmode="numeric" placeholder="Amount"><p><button class="btn" onclick="bankOp('deposit')">Deposit</button></p></div>
+    <div class="card"><h3>Withdraw</h3><p class="mu">Take money out of the bank as cash.</p><input id="k_wd" inputmode="numeric" placeholder="Amount"><p><button class="btn" onclick="bankOp('withdraw')">Withdraw</button></p></div>
+    <div class="card"><h3>Transfer</h3><p class="mu">Send money from this account's bank to another account (a person's Discord ID, or a company ID starting with c_). They must have opened their account.</p>
+      <input id="k_to" placeholder="Their account ID"><input id="k_amt" inputmode="numeric" placeholder="Amount" style="margin-top:8px"><input id="k_note" maxlength="100" placeholder="Note (optional)" style="margin-top:8px"><p><button class="btn" onclick="bankOp('transfer')">Send</button></p></div></div>
+   ${newco}
    <div class="card"><h3>Recent activity</h3><table><tr><th>What</th><th>Amount</th><th>Note</th><th>When</th></tr>${hist.map(t=>{const l=line(t);return `<tr><td>${esc(l[0])}</td><td>${l[2]}${esc(l[1])}</td><td>${esc(t.note||'')}</td><td class="mu">${esc(new Date(t.at||0).toLocaleString())}</td></tr>`}).join('')||'<tr><td class="mu" colspan="4">No activity yet.</td></tr>'}</table></div>`;
 }
 async function openAcct(claim){
@@ -323,12 +412,25 @@ async function openAcct(claim){
     else await ref.set({owner:u.uid,name:S.user.name.slice(0,80),cash:0,bank:0,lastTx:'',updated:now});
     bank()}catch(e){say(e&&e.code==='permission-denied'?'That account is already linked to another browser. Ask staff to reset it.':(e.message||fe(e)))}
 }
+async function makeCompany(){
+  const name=(($('#co_name')&&$('#co_name').value)||'').trim().replace(/\s+/g,' ');
+  if(name.length<2||name.length>40)return say('Give the company a name of 2 to 40 characters');
+  if(!confirm('Create the company account "'+name+'"? You only get one and the name cannot be changed.'))return;
+  try{const u=await authed();
+    await db.collection('accounts').doc('c_'+S.user.id).set({owner:u.uid,ownerId:S.user.id,type:'company',name,cash:0,bank:0,lastTx:'',updated:Date.now()});
+    BK='co';say('Company account created.');bank()}
+  catch(e){say(e&&e.code==='permission-denied'?'Blocked. You may already have a company account, or it is linked to another browser.':(e.message||fe(e)))}
+}
+async function claimCompany(){
+  try{const u=await authed();await db.collection('accounts').doc('c_'+S.user.id).update({owner:u.uid,updated:Date.now()});BK='co';bank()}
+  catch(e){say(e&&e.code==='permission-denied'?'Ask staff to unlink the company account first.':(e.message||fe(e)))}
+}
 async function bankOp(type){
-  if(!S.user)return;const id=S.user.id;let to=id,note='';
+  if(!S.user)return;const id=BK==='co'?'c_'+S.user.id:S.user.id;let to=id,note='';
   const a=amt($(type==='deposit'?'#k_dep':type==='withdraw'?'#k_wd':'#k_amt').value);
   if(!a)return say('Enter a whole number above 0 (up to 1,000,000,000)');
-  if(type==='transfer'){to=$('#k_to').value.replace(/\D/g,'');
-    if(to.length<15||to.length>25)return say("Enter the recipient's Discord user ID");
+  if(type==='transfer'){to=aid($('#k_to').value);
+    if(!aidOk(to))return say("Enter the recipient's account ID (a Discord ID, or c_ID for a company)");
     if(to===id)return say('You cannot send money to yourself');
     note=$('#k_note').value.trim().slice(0,100)}
   const L=newId('ledger'),b=db.batch(),inc=FV().increment,now=Date.now(),me=db.collection('accounts').doc(id);
@@ -340,8 +442,8 @@ async function bankOp(type){
 }
 // staff: give or remove cash, or unlink an account from its browser (all need the staff PIN)
 async function bankGrant(kind){
-  const to=$('#g_id').value.replace(/\D/g,''),a=amt($('#g_amt').value);
-  if(to.length<15||to.length>25)return say('Enter the Discord user ID');if(!a)return say('Enter a whole number above 0');
+  const to=aid($('#g_id').value),a=amt($('#g_amt').value);
+  if(!aidOk(to))return say('Enter the Discord user ID (or c_ID for a company)');if(!a)return say('Enter a whole number above 0');
   if(!confirm((kind==='grant'?'Give ':'Remove ')+SB(a)+(kind==='grant'?' to ':' from ')+to+'?'))return;
   const inc=FV().increment,note=$('#g_note').value.trim().slice(0,100),by=S.user.name.slice(0,80);
   // create=true: the person has no bank account yet, so staff create one (unclaimed) that already holds the cash
@@ -353,14 +455,14 @@ async function bankGrant(kind){
   try{await authed();
     try{await run(false);say('Done. '+(kind==='grant'?'Gave ':'Removed ')+SB(a)+'.')}
     catch(e1){
-      if(kind==='grant'&&/rules blocked/.test(e1.message||'')){
+      if(kind==='grant'&&!to.startsWith('c_')&&/rules blocked/.test(e1.message||'')){
         try{await run(true);say('Done. Gave '+SB(a)+'. This person had no bank account yet, so one was created for them. They claim it from the Bank tab.');return}catch(e2){}
       }
       throw e1}
   }catch(e){say((e.message||fe(e))+(/rules blocked/.test(e.message||'')?' Both an update and a new-account attempt were blocked, so this is the rules, not a missing account. Check that the newest rules are published, and that removing cash would not take them below 0.':''))}
 }
 async function bankReset(){
-  const id=$('#g_id').value.replace(/\D/g,'');if(id.length<15)return say('Enter the Discord user ID');
+  const id=aid($('#g_id').value);if(!aidOk(id))return say('Enter the Discord user ID (or c_ID for a company)');
   if(!confirm('Unlink the bank account of '+id+' from its browser? They can claim it again.'))return;
   try{await authed();await staffWrite('r_'+id,b=>b.update(db.collection('accounts').doc(id),{owner:'',updated:Date.now()}));say('Account unlinked. The owner can claim it again.')}catch(e){say(e.message||fe(e))}
 }
@@ -457,7 +559,7 @@ addEventListener('pagehide',save);document.addEventListener('visibilitychange',(
     {k:'terms',sel:'#nav [data-k=terms]',t:'Terms of Service',d:'The rules for everyone in the community, including international members. Worth a read before you join in.'},
     ...(S.user?[{k:'bank',sel:'#nav [data-k=bank]',t:'Bank',d:'Open your account, then deposit, withdraw and send StiltonBux (SB) to other members.'}]:[]),
     {k:null,sel:'#who',t:S.user?'Your account':'Log in',d:S.user?'This is you. Your Discord name shows here, and you can log out any time.':'Log in with Discord to prove you are in our server. You need this to apply for a chain server.'}];
-    if(S.staff)s.push({k:'mod',sel:'#nav [data-k=mod]',t:'Moderation',d:'Staff only. Ban or unban people from the site. Chain applications are reviewed on the Chain Servers tab.'});
+    if(S.staff)s.push({k:'mod',sel:'#nav [data-k=mod]',t:'Staff',d:'Staff only. See the site at a glance, manage the bank, ban or unban people and shut the site down. Chain applications are reviewed on the Chain Servers tab.'});
     return s};
   function place(){
     const s=steps[i],el=document.querySelector(s.sel);if(!el)return;
@@ -491,4 +593,3 @@ addEventListener('pagehide',save);document.addEventListener('visibilitychange',(
   };
 })();
 init();
-
