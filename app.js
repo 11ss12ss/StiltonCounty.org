@@ -50,6 +50,14 @@ async function findBan(uid,dev,flagUid){
     return{ban:null,ok:true};
   }catch{return{ban:null,ok:false}}
 }
+let TOSBACK=null;
+function footTerms(){
+  if(BANNED||DOWN){ // banned or closed: show only the (static, read-only) Terms with a way back
+    if(TOSBACK===null)TOSBACK=$('#view').innerHTML;
+    terms();$('#view').insertAdjacentHTML('afterbegin','<div class="card"><button class="btn s" onclick="closeTerms()">Back</button></div>');
+    scrollTo(0,0);return}
+  go('terms');scrollTo(0,0)}
+function closeTerms(){if(TOSBACK!==null){$('#view').innerHTML=TOSBACK;TOSBACK=null}scrollTo(0,0)}
 function showBan(b){
   BANNED=true;
   $('#nav').innerHTML='';$('#who').innerHTML='';
@@ -77,7 +85,7 @@ async function init(){
       S.user={id:u.id,name:m.nick||u.global_name||u.username,avatar:u.avatar?`https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png`:null};
       S.staff=r.includes(CFG.STAFF_ROLE_ID);
       draft=JSON.parse(localStorage.getItem('rp_draft_'+u.id)||'{}');
-      tab=['home','chains','bank','terms','mod'].includes(draft.tab)?draft.tab:tab;
+      tab=['home','chains','bank','tickets','terms','mod'].includes(draft.tab)?draft.tab:tab;
       db.collection('devices').doc(u.id).set({ids:firebase.firestore.FieldValue.arrayUnion('v:'+DEV.v,'f:'+DEV.f),name:S.user.name.slice(0,80),updated:Date.now()},{merge:true}).catch(()=>{}); // lets staff ban this person's devices too
     }catch(e){localStorage.removeItem('rp_tok');S.user=null;S.staff=false;LOGIN_MSG='Could not confirm your Discord server membership'+(e&&/^\d+$/.test(e.message)?' (Discord error '+e.message+')':'')+'. You must be a member of our Discord server to log in.'}}
   SITE=await siteP;
@@ -134,9 +142,9 @@ async function loadOnline(){
 async function loadEconomy(){
   const te=$('#t_econ');if(!te||tab!=='mod')return;
   try{await authed();
-    const [g,t]=await Promise.all([db.collection('ledger').where('type','==','grant').get(),db.collection('ledger').where('type','==','take').get()]);
-    const sum=q=>q.docs.reduce((n,d)=>n+(Number(d.data().amount)||0),0),given=sum(g),taken=sum(t);
-    te.textContent=SB(given-taken);const c=$('#t_econ_s');if(c)c.textContent=g.size+' gives · '+t.size+' removals by staff';
+    const [g,t,n,f]=await Promise.all(['grant','take','income','fine'].map(k=>db.collection('ledger').where('type','==',k).get()));
+    const sum=q=>q.docs.reduce((x,d)=>x+(Number(d.data().amount)||0),0),gv=sum(g),tk=sum(t),inc=sum(n),fn=sum(f);
+    te.textContent=SB(gv+inc-tk-fn);const c=$('#t_econ_s');if(c)c.textContent=SB(gv)+' given, '+SB(inc)+' income, '+SB(tk+fn)+' removed';
   }catch(e){te.textContent='—';const c=$('#t_econ_s');if(c)c.textContent=e&&e.code==='permission-denied'?'publish the newest rules':'could not load'}
 }
 const fillBan=id=>{DT='bans';mod().then(()=>{const el=$('#b_id');if(el&&id){el.value=id;el.scrollIntoView({block:'center'})}})};
@@ -157,14 +165,15 @@ function watchBan(uid){
 }
 function render(){
   const tabs=[['home','Home'],['chains','Chain Servers']];
-  if(S.user)tabs.push(['bank','Bank']);
+  if(S.user)tabs.push(['bank','Bank'],['tickets','Tickets']);
   tabs.push(['terms','Terms']);
   if(S.staff)tabs.push(['mod','Staff']);
   if(!tabs.some(x=>x[0]==tab))tab='home';
   $('#nav').innerHTML=tabs.map(([k,l])=>`<button data-k="${k}" class="${k==tab?'on':''}" onclick="go('${k}')">${l}</button>`).join('');
   $('#who').innerHTML=S.user?`<span class="user">${S.user.avatar?`<img src="${esc(S.user.avatar)}">`:''}${esc(S.user.name)}${S.staff?'<span class="badge">Staff</span>':''} <button class="btn s" onclick="logout()">Log out</button></span>`:`<a class="btn" href="${loginUrl()}">Log in with Discord</a>`;
   document.body.classList.toggle('wide',tab==='mod');
-  ({home,chains,bank,terms,mod})[tab]();
+  ({home,chains,bank,tickets,terms,mod})[tab]();
+  if(S.user)ticketBadge();
 }
 const go=k=>{if(BANNED||DOWN)return;tab=k;draft.tab=k;say('');render()};
 const needLogin=()=>$('#view').innerHTML=`<div class="card"><h2>Citizen Login</h2><p class="mu">Log in with Discord. We'll check that you're in our server.</p><a class="btn" href="${loginUrl()}">Log in with Discord</a></div>`;
@@ -271,6 +280,8 @@ async function loadPulse(){
     else if(t.type==='withdraw'){tag='Withdraw';tx=`<b>${esc(sid(t.from))}</b> withdrew ${esc(SB(t.amount))}`}
     else if(t.type==='grant'){tag='Staff';cls='a';tx=`Staff gave ${esc(SB(t.amount))} to <b>${esc(sid(t.to))}</b>`}
     else if(t.type==='take'){tag='Staff';cls='a';tx=`Staff removed ${esc(SB(t.amount))} from <b>${esc(sid(t.to))}</b>`}
+    else if(t.type==='income'){tag='Income';tx=`<b>${esc(sid(t.to))}</b> collected ${esc(SB(t.amount))} income`}
+    else if(t.type==='fine'){tag='Ticket';cls='a';tx=`<b>${esc(sid(t.from))}</b> paid a ticket of ${esc(SB(t.amount))}`}
     else{tag='Transfer';cls='g';tx=`<b>${esc(sid(t.from))}</b> sent ${esc(SB(t.amount))} to <b>${esc(sid(t.to))}</b>`}
     return {at:t.at||0,tag,cls,tx}});
   (window.__bans||[]).slice(0,10).forEach(b=>items.push({at:b.created||0,tag:'Ban',cls:'r',tx:`<b>${esc(b.name||sid(b.user_id))}</b> was banned by ${esc(b.by_name||'staff')}`}));
@@ -302,7 +313,8 @@ async function mod(){
   window.__bans=list;
   try{pend=(await db.collection('chains').get()).docs.filter(d=>{const r=d.data().review;return r==='pending'||!r}).length}catch{}
   const down=!!(SITE&&SITE.down);
-  const nav=[['over','Overview'],['look','Lookup'],['bank','Bank'],['bans','Bans'],['site','Site']];
+  const nav=[['over','Overview'],['look','Lookup'],['bank','Bank'],['tix','Tickets'],['bans','Bans'],['site','Site']];
+  let tix=[];if(DT==='tix'){try{await authed();tix=(await db.collection('tickets').orderBy('created','desc').limit(60).get()).docs.map(d=>({id:d.id,...d.data()}))}catch(e){say(e&&e.code==='permission-denied'?'Publish the newest rules':fe(e))}}
   const head=`<div class="st-head"><div class="st-title"><h2>Staff Console</h2><span>Republic of Stilton</span></div>
     <div class="st-tabs">${nav.map(([k,l])=>`<button class="${DT===k?'on':''}" onclick="dashTab('${k}')">${l}${k==='bans'?`<b>${list.length}</b>`:''}</button>`).join('')}</div>
     <div class="st-r"><span class="st-stat ${down?'bad':''}">${down?'Site shut down':'Site operational'}</span><input id="b_pin" type="password" placeholder="Staff PIN" title="Staff PIN, used for every action" name="ros-staff-pin" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" oninput="PIN=this.value.trim()" value="${esc(pin())}"></div></div>`;
@@ -329,6 +341,11 @@ async function mod(){
     <div class="row"><div><label>Account ID *</label><input id="g_id" placeholder="Discord ID, or c_ID for a company"></div><div><label>Amount (SB) *</label><input id="g_amt" inputmode="numeric"></div></div>
     <label>Note</label><input id="g_note" maxlength="100">
     <p><button class="btn" onclick="bankGrant('grant')">Give cash</button> <button class="btn s" onclick="bankGrant('take')">Remove cash</button> <button class="btn s" onclick="bankReset()">Unlink account</button></p></div>`;
+  else if(DT==='tix')body=`<div class="panel"><h3>Issue a ticket</h3><p class="sub">The person sees it on their Tickets tab and pays it from their bank. Paid tickets remove that money from the economy. Uses the staff PIN at the top right.</p>
+    <div class="row"><div><label>Discord user ID *</label><input id="tk_id" inputmode="numeric" placeholder="e.g. 123456789012345678"></div><div><label>Amount (SB) *</label><input id="tk_amt" inputmode="numeric"></div></div>
+    <label>Reason *</label><input id="tk_reason" maxlength="200" placeholder="e.g. Speeding, 40 over the limit">
+    <p><button class="btn" onclick="issueTicket()">Issue ticket</button></p></div>
+    <div class="panel"><h3>Recent tickets</h3><table class="tbl"><tr><th>User</th><th>Reason</th><th>Amount</th><th>Status</th><th>By</th><th></th></tr>${tix.map(x=>`<tr><td>${esc(x.to)}</td><td>${esc(x.reason)}</td><td>${esc(SB(x.amount))}</td><td><span class="tag ${x.status==='paid'?'g':x.status==='void'?'':'a'}">${esc(x.status)}</span></td><td>${esc(x.by_name||'')}</td><td style="text-align:right">${x.status==='unpaid'?`<button class="btn s" onclick="voidTicket('${safeId(x.id)}')">Cancel</button>`:''}</td></tr>`).join('')||'<tr><td class="mu" colspan="6">No tickets issued yet.</td></tr>'}</table></div>`;
   else if(DT==='bans')body=`<div class="panel"><h3>Ban a user</h3><p class="sub">Banning someone also bans every device they have logged in from. Uses the staff PIN at the top right.</p>
     <div class="row"><div><label>Discord user ID *</label><input id="b_id" placeholder="e.g. 123456789012345678" inputmode="numeric"></div><div><label>Reason (shown to them)</label><input id="b_reason" maxlength="200"></div></div>
     <label style="display:flex;gap:10px;align-items:flex-start;text-transform:none;letter-spacing:0;font-size:.9rem"><input id="b_fp" type="checkbox" checked style="width:auto;margin-top:3px"><span>Also ban their hardware fingerprint <span class="mu">(stronger, but could also block someone with an identical device)</span></span></label>
@@ -359,6 +376,7 @@ async function doUnban(id){if(!id||!confirm('Unban '+id+'?'))return;
 const SB=n=>Number(n||0).toLocaleString()+' SB';
 const FV=()=>firebase.firestore.FieldValue;
 const newId=c=>db.collection(c).doc().id;
+const INCOME=500,INCOME_MS=3*3600*1000;
 const aid=v=>{v=String(v||'').trim();const m=v.match(/^c_?(\d{15,25})$/i);return m?'c_'+m[1]:v.replace(/\D/g,'')};
 const aidOk=v=>/^(c_)?\d{15,25}$/.test(v);
 const amt=v=>{const n=Number(String(v||'').replace(/[, ]/g,''));return Number.isInteger(n)&&n>0&&n<=1e9?n:0};
@@ -370,7 +388,45 @@ async function authed(){
 }
 const bankErr=(e,type)=>e&&e.code==='permission-denied'?(type==='transfer'?'Transfer blocked. Check that you have enough in the bank and that the recipient has opened their own bank account.':type==='deposit'?'Blocked. Check that you have enough cash.':type==='withdraw'?'Blocked. Check that you have enough in the bank.':'Blocked by the database rules.'):(e&&e.message)||'Database error';
 let BK='me';
+async function ticketBadge(){
+  try{await authed();const q=await db.collection('tickets').where('to','==',S.user.id).get();const n=q.docs.filter(d=>d.data().status==='unpaid').length;
+    const b=document.querySelector('#nav [data-k=tickets]');if(b)b.textContent='Tickets'+(n?' ('+n+')':'')}catch{}
+}
+async function tickets(){
+  if(!S.user)return needLogin();
+  $('#view').innerHTML=LOADER(1);let rows=[];
+  try{await authed();rows=(await db.collection('tickets').where('to','==',S.user.id).get()).docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.created||0)-(a.created||0))}
+  catch(e){$('#view').innerHTML=`<div class="card"><h2>Tickets</h2><p class="mu">${esc(e&&e.code==='permission-denied'?'Publish the newest Firestore rules to use tickets.':(e&&e.message)||'Could not load tickets.')}</p></div>`;return}
+  const open=rows.filter(x=>x.status==='unpaid'),done=rows.filter(x=>x.status!=='unpaid');
+  $('#view').innerHTML=`<div class="card"><h2>Tickets</h2><p class="mu">Tickets issued to you by staff. Unpaid tickets are paid from your personal bank balance.</p></div>
+   <div class="card"><h3>Unpaid (${open.length})</h3>${open.length?`<table><tr><th>Reason</th><th>Amount</th><th>Issued by</th><th>When</th><th></th></tr>${open.map(x=>`<tr><td>${esc(x.reason)}</td><td>${esc(SB(x.amount))}</td><td>${esc(x.by_name||'Staff')}</td><td class="mu">${esc(new Date(x.created||0).toLocaleString())}</td><td style="text-align:right"><button class="btn" onclick="payTicket('${safeId(x.id)}')">Pay</button></td></tr>`).join('')}</table>`:'<p class="mu">You have no unpaid tickets.</p>'}</div>
+   <div class="card"><h3>History</h3><table><tr><th>Reason</th><th>Amount</th><th>Status</th><th>When</th></tr>${done.map(x=>`<tr><td>${esc(x.reason)}</td><td>${esc(SB(x.amount))}</td><td>${x.status==='paid'?'Paid':'Cancelled'}</td><td class="mu">${esc(new Date(x.paidAt||x.created||0).toLocaleString())}</td></tr>`).join('')||'<tr><td class="mu" colspan="4">Nothing yet.</td></tr>'}</table></div>`;
+}
+async function payTicket(tid){
+  if(!S.user||!tid)return;const id=S.user.id;
+  try{await authed();
+    const tr=db.collection('tickets').doc(tid),d=await tr.get();
+    if(!d.exists||d.data().status!=='unpaid'||d.data().to!==id)return say('That ticket cannot be paid.');
+    const t=d.data();if(!confirm('Pay '+SB(t.amount)+' from your bank for: '+t.reason+'?'))return;
+    const L=newId('ledger'),now=Date.now(),b=db.batch();
+    b.set(db.collection('ledger').doc(L),{type:'fine',from:id,to:'government',amount:t.amount,at:now,note:('Ticket: '+t.reason).slice(0,100),ticket:tid});
+    b.update(db.collection('accounts').doc(id),{bank:FV().increment(-t.amount),lastTx:L,updated:now});
+    b.update(tr,{status:'paid',paidAt:now,payLedger:L});
+    await b.commit();say('Ticket paid.');tickets();ticketBadge()}
+  catch(e){say(e&&e.code==='permission-denied'?'Payment blocked. You need enough money in your bank (not cash) and an open bank account. Deposit first if needed.':(e.message||fe(e)))}
+}
+async function issueTicket(){
+  const to=($('#tk_id').value||'').replace(/\D/g,''),a=amt($('#tk_amt').value),reason=($('#tk_reason').value||'').trim().slice(0,200);
+  if(to.length<15||to.length>25)return say('Enter the Discord user ID');if(!a||a>1000000)return say('Enter an amount from 1 to 1,000,000');if(!reason)return say('Enter the reason');
+  if(!confirm('Issue a ticket of '+SB(a)+' to '+to+'?'))return;
+  const tid=newId('tickets');
+  try{await staffWrite('t_'+tid,b=>b.set(db.collection('tickets').doc(tid),{to,by:S.user.id,by_name:S.user.name.slice(0,80),reason,amount:a,created:Date.now(),status:'unpaid'}));say('Ticket issued.');mod()}
+  catch(e){say(e.message||fe(e))}
+}
+async function voidTicket(tid){if(!tid||!confirm('Cancel this ticket?'))return;
+  try{await staffWrite('tv_'+tid,b=>b.update(db.collection('tickets').doc(tid),{status:'void'}));say('Ticket cancelled.');mod()}catch(e){say(e.message||fe(e))}}
 async function bank(){
+  clearInterval(window.__incT);
   if(!S.user){$('#view').innerHTML=`<div class="card"><h2>Bank</h2><p class="mu">Log in with Discord to use the bank.</p><a class="btn" href="${loginUrl()}">Log in with Discord</a></div>`;return}
   $('#view').innerHTML=LOADER(1);
   const pid=S.user.id,cid='c_'+pid;let acct=null,comp=null,coLocked=false,state='ok';
@@ -389,9 +445,12 @@ async function bank(){
   const id=BK==='co'?cid:pid,cur=BK==='co'?comp:acct;
   let hist=[];try{const [x,y]=await Promise.all([db.collection('ledger').where('from','==',id).limit(25).get(),db.collection('ledger').where('to','==',id).limit(25).get()]);const m={};[...x.docs,...y.docs].forEach(d=>m[d.id]=d.data());hist=Object.values(m).sort((p,q)=>(q.at||0)-(p.at||0)).slice(0,20)}catch{}
   const line=t=>{const n=SB(t.amount);
+    if(t.type==='income')return['Income',n,'+'];if(t.type==='fine')return['Ticket paid',n,'-'];
     if(t.type==='deposit')return['Deposit',n,'+'];if(t.type==='withdraw')return['Withdrawal',n,'-'];
     if(t.type==='grant')return['Received from staff',n,'+'];if(t.type==='take')return['Removed by staff',n,'-'];
     return t.from===id?['Sent to '+t.to,n,'-']:['Received from '+t.from,n,'+']};
+  const li=cur.lastIncome&&cur.lastIncome.toMillis?cur.lastIncome.toMillis():0,nextAt=li+INCOME_MS;
+  const incomeCard=BK==='me'?`<div class="card"><h3>Income</h3><p class="mu">Collect ${SB(INCOME)} in cash once every 3 hours.</p><p><button class="btn" id="inc_b" onclick="collectIncome()">Collect ${SB(INCOME)}</button> <span class="mu" id="inc_t"></span></p></div>`:'';
   const switcher=`<p style="margin:14px 0 0"><button class="btn${BK==='me'?'':' s'}" onclick="BK='me';bank()">Personal</button> ${comp&&!coLocked?`<button class="btn${BK==='co'?'':' s'}" onclick="BK='co';bank()">Company: ${esc(String(comp.name||'').slice(0,40))}</button>`:''}</p>`;
   const newco=!comp?`<div class="card"><h3>Company account</h3><p class="mu">You can open <b>one</b> extra account for a company or business. It has its own cash and bank balance and its own ID, so people can pay your company. This cannot be undone, and the name cannot be changed later.</p>
       <label>Company name *</label><input id="co_name" maxlength="40" placeholder="e.g. Stilton Motors"><p><button class="btn" onclick="makeCompany()">Create company account</button></p></div>`
@@ -403,8 +462,21 @@ async function bank(){
     <div class="card"><h3>Withdraw</h3><p class="mu">Take money out of the bank as cash.</p><input id="k_wd" inputmode="numeric" placeholder="Amount"><p><button class="btn" onclick="bankOp('withdraw')">Withdraw</button></p></div>
     <div class="card"><h3>Transfer</h3><p class="mu">Send money from this account's bank to another account (a person's Discord ID, or a company ID starting with c_). They must have opened their account.</p>
       <input id="k_to" placeholder="Their account ID"><input id="k_amt" inputmode="numeric" placeholder="Amount" style="margin-top:8px"><input id="k_note" maxlength="100" placeholder="Note (optional)" style="margin-top:8px"><p><button class="btn" onclick="bankOp('transfer')">Send</button></p></div></div>
+   ${incomeCard}
    ${newco}
    <div class="card"><h3>Recent activity</h3><table><tr><th>What</th><th>Amount</th><th>Note</th><th>When</th></tr>${hist.map(t=>{const l=line(t);return `<tr><td>${esc(l[0])}</td><td>${l[2]}${esc(l[1])}</td><td>${esc(t.note||'')}</td><td class="mu">${esc(new Date(t.at||0).toLocaleString())}</td></tr>`}).join('')||'<tr><td class="mu" colspan="4">No activity yet.</td></tr>'}</table></div>`;
+  if(BK==='me'){const tick=()=>{const b=$('#inc_b'),t=$('#inc_t');if(!b||!t){clearInterval(window.__incT);return}
+      const left=nextAt-Date.now();if(left<=0){b.disabled=false;b.style.opacity='';t.textContent='Ready'}
+      else{b.disabled=true;b.style.opacity='.55';const m=Math.ceil(left/60000);t.textContent='Next payout in '+Math.floor(m/60)+'h '+String(m%60).padStart(2,'0')+'m'}};
+    tick();window.__incT=setInterval(tick,30000)}
+}
+async function collectIncome(){
+  if(!S.user||BK!=='me')return;
+  const id=S.user.id,L=newId('ledger'),now=Date.now(),b=db.batch();
+  b.set(db.collection('ledger').doc(L),{type:'income',from:'system',to:id,amount:INCOME,at:now,note:'Income'});
+  b.update(db.collection('accounts').doc(id),{cash:FV().increment(INCOME),lastIncome:FV().serverTimestamp(),lastTx:L,updated:now});
+  try{await authed();await b.commit();say('Collected '+SB(INCOME)+' in cash.');bank()}
+  catch(e){say(e&&e.code==='permission-denied'?'Income is not ready yet. Try again when the timer reaches zero.':(e.message||fe(e)))}
 }
 async function openAcct(claim){
   try{const u=await authed(),ref=db.collection('accounts').doc(S.user.id),now=Date.now();
@@ -543,7 +615,7 @@ addEventListener('pagehide',save);document.addEventListener('visibilitychange',(
     clean();ov=document.createElement('div');ov.className='ov';
     ov.innerHTML=`<div class="card" role="dialog" aria-modal="true" aria-label="Welcome"><div class="kick">|+-+| Republic Of Stilton |+-+|</div><h2>Welcome to the Republic of Stilton</h2>
       <p class="mu">Looks like it's your first time here. This site is the hub for the whole Republic.</p>
-      <ul><li>Learn what ROS is and how it works</li><li>Browse every chain server (city) in one place</li><li>Log in with Discord to apply to list your own chain server</li></ul>
+      <ul><li>Learn what ROS is and how it works</li><li>Browse every chain server (city) in one place</li><li>Log in with Discord to use the bank, collect income every 3 hours, open a company account and see your tickets</li><li>Apply to list your own chain server</li></ul>
       <div class="acts"><button class="btn" id="i_go">Take the quick tour</button><button class="btn s" id="i_skip">Skip</button></div></div>`;
     document.body.appendChild(ov);
     const done=()=>{mark();clean()};
@@ -557,7 +629,7 @@ addEventListener('pagehide',save);document.addEventListener('visibilitychange',(
     {k:'home',sel:'#nav [data-k=home]',t:'Home',d:'Start here. It explains what the Republic of Stilton is: roleplay, government, the economy and how chain servers fit in.'},
     {k:'chains',sel:'#nav [data-k=chains]',t:'Chain Servers',d:'Every city in the Republic. Open ones show a Join button. If you run a city, log in and apply here, and staff will review it.'},
     {k:'terms',sel:'#nav [data-k=terms]',t:'Terms of Service',d:'The rules for everyone in the community, including international members. Worth a read before you join in.'},
-    ...(S.user?[{k:'bank',sel:'#nav [data-k=bank]',t:'Bank',d:'Open your account, then deposit, withdraw and send StiltonBux (SB) to other members.'}]:[]),
+    ...(S.user?[{k:'bank',sel:'#nav [data-k=bank]',t:'Bank',d:'Open your account, then deposit, withdraw and send StiltonBux (SB). Collect free income every 3 hours, and open one company account.'},{k:'tickets',sel:'#nav [data-k=tickets]',t:'Tickets',d:'Tickets issued to you by staff appear here. Pay them from your bank.'}]:[]),
     {k:null,sel:'#who',t:S.user?'Your account':'Log in',d:S.user?'This is you. Your Discord name shows here, and you can log out any time.':'Log in with Discord to prove you are in our server. You need this to apply for a chain server.'}];
     if(S.staff)s.push({k:'mod',sel:'#nav [data-k=mod]',t:'Staff',d:'Staff only. See the site at a glance, manage the bank, ban or unban people and shut the site down. Chain applications are reviewed on the Chain Servers tab.'});
     return s};
