@@ -84,6 +84,7 @@ async function init(){
   if(u){try{const m=await dc(`/users/@me/guilds/${CFG.GUILD_ID}/member`,t),r=m.roles||[];
       S.user={id:u.id,name:m.nick||u.global_name||u.username,avatar:u.avatar?`https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png`:null};
       S.staff=r.includes(CFG.STAFF_ROLE_ID);
+      if(!S.staff){try{S.staff=(await db.collection('admins').doc(u.id).get()).exists}catch{}} // admins added from the Staff tab
       draft=JSON.parse(localStorage.getItem('rp_draft_'+u.id)||'{}');
       tab=['home','chains','bank','tickets','terms','mod'].includes(draft.tab)?draft.tab:tab;
       db.collection('devices').doc(u.id).set({ids:firebase.firestore.FieldValue.arrayUnion('v:'+DEV.v,'f:'+DEV.f),name:S.user.name.slice(0,80),updated:Date.now()},{merge:true}).catch(()=>{}); // lets staff ban this person's devices too
@@ -313,7 +314,8 @@ async function mod(){
   window.__bans=list;
   try{pend=(await db.collection('chains').get()).docs.filter(d=>{const r=d.data().review;return r==='pending'||!r}).length}catch{}
   const down=!!(SITE&&SITE.down);
-  const nav=[['over','Overview'],['look','Lookup'],['bank','Bank'],['tix','Tickets'],['bans','Bans'],['site','Site']];
+  const nav=[['over','Overview'],['look','Lookup'],['bank','Bank'],['tix','Tickets'],['bans','Bans'],['adm','Admins'],['site','Site']];
+  let adm=[];if(DT==='adm'){try{adm=(await db.collection('admins').get()).docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.created||0)-(a.created||0))}catch(e){say(e&&e.code==='permission-denied'?'Publish the newest rules':fe(e))}}
   let tix=[];if(DT==='tix'){try{await authed();tix=(await db.collection('tickets').orderBy('created','desc').limit(60).get()).docs.map(d=>({id:d.id,...d.data()}))}catch(e){say(e&&e.code==='permission-denied'?'Publish the newest rules':fe(e))}}
   const head=`<div class="st-head"><div class="st-title"><h2>Staff Console</h2><span>Republic of Stilton</span></div>
     <div class="st-tabs">${nav.map(([k,l])=>`<button class="${DT===k?'on':''}" onclick="dashTab('${k}')">${l}${k==='bans'?`<b>${list.length}</b>`:''}</button>`).join('')}</div>
@@ -346,6 +348,10 @@ async function mod(){
     <label>Reason *</label><input id="tk_reason" maxlength="200" placeholder="e.g. Speeding, 40 over the limit">
     <p><button class="btn" onclick="issueTicket()">Issue ticket</button></p></div>
     <div class="panel"><h3>Recent tickets</h3><table class="tbl"><tr><th>User</th><th>Reason</th><th>Amount</th><th>Status</th><th>By</th><th></th></tr>${tix.map(x=>`<tr><td>${esc(x.to)}</td><td>${esc(x.reason)}</td><td>${esc(SB(x.amount))}</td><td><span class="tag ${x.status==='paid'?'g':x.status==='void'?'':'a'}">${esc(x.status)}</span></td><td>${esc(x.by_name||'')}</td><td style="text-align:right">${x.status==='unpaid'?`<button class="btn s" onclick="voidTicket('${safeId(x.id)}')">Cancel</button>`:''}</td></tr>`).join('')||'<tr><td class="mu" colspan="6">No tickets issued yet.</td></tr>'}</table></div>`;
+  else if(DT==='adm')body=`<div class="panel"><h3>Give someone admin</h3><p class="sub">Admins see this Staff tab as soon as they log in, even without the staff role on Discord. They still need the staff PIN to make any change, so only give the PIN to people you trust. People with the staff role on Discord are always admins. Uses the staff PIN at the top right.</p>
+    <div class="row"><div><label>Discord user ID *</label><input id="ad_id" inputmode="numeric" placeholder="e.g. 123456789012345678"></div><div><label>Name or note</label><input id="ad_name" maxlength="80" placeholder="e.g. Jordan"></div></div>
+    <p><button class="btn" onclick="addAdmin()">Give admin</button></p></div>
+    <div class="panel"><h3>Admins added here (${adm.length})</h3><table class="tbl"><tr><th>User</th><th>Added by</th><th>When</th><th></th></tr>${adm.map(x=>`<tr><td><b>${esc(x.name||'—')}</b><br><span class="mu">${esc(x.id)}</span></td><td>${esc(x.by_name||'')}</td><td class="mu">${esc(new Date(x.created||0).toLocaleString())}</td><td style="text-align:right"><button class="btn s" onclick="removeAdmin('${safeId(x.id)}')">Remove</button></td></tr>`).join('')||'<tr><td class="mu" colspan="4">Nobody added yet. Staff-role members on Discord are not listed here.</td></tr>'}</table></div>`;
   else if(DT==='bans')body=`<div class="panel"><h3>Ban a user</h3><p class="sub">Banning someone also bans every device they have logged in from. Uses the staff PIN at the top right.</p>
     <div class="row"><div><label>Discord user ID *</label><input id="b_id" placeholder="e.g. 123456789012345678" inputmode="numeric"></div><div><label>Reason (shown to them)</label><input id="b_reason" maxlength="200"></div></div>
     <label style="display:flex;gap:10px;align-items:flex-start;text-transform:none;letter-spacing:0;font-size:.9rem"><input id="b_fp" type="checkbox" checked style="width:auto;margin-top:3px"><span>Also ban their hardware fingerprint <span class="mu">(stronger, but could also block someone with an identical device)</span></span></label>
@@ -423,6 +429,15 @@ async function issueTicket(){
   try{await staffWrite('t_'+tid,b=>b.set(db.collection('tickets').doc(tid),{to,by:S.user.id,by_name:S.user.name.slice(0,80),reason,amount:a,created:Date.now(),status:'unpaid'}));say('Ticket issued.');mod()}
   catch(e){say(e.message||fe(e))}
 }
+async function addAdmin(){
+  const id=($('#ad_id').value||'').replace(/\D/g,''),name=($('#ad_name').value||'').trim().slice(0,80);
+  if(id.length<15||id.length>25)return say('Enter the Discord user ID');
+  if(!confirm('Give admin access to '+id+'?'))return;
+  try{await staffWrite('a_'+id,b=>b.set(db.collection('admins').doc(id),{name,by:S.user.id,by_name:S.user.name.slice(0,80),created:Date.now()}));say('Admin added. They see the Staff tab the next time they load the site.');mod()}
+  catch(e){say(e.message||fe(e))}
+}
+async function removeAdmin(id){if(!id||!confirm('Remove admin access from '+id+'?'))return;
+  try{await staffWrite('a_'+id,b=>b.delete(db.collection('admins').doc(id)));say('Admin removed.');mod()}catch(e){say(e.message||fe(e))}}
 async function voidTicket(tid){if(!tid||!confirm('Cancel this ticket?'))return;
   try{await staffWrite('tv_'+tid,b=>b.update(db.collection('tickets').doc(tid),{status:'void'}));say('Ticket cancelled.');mod()}catch(e){say(e.message||fe(e))}}
 async function bank(){
@@ -665,4 +680,3 @@ addEventListener('pagehide',save);document.addEventListener('visibilitychange',(
   };
 })();
 init();
-
