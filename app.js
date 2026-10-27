@@ -174,7 +174,7 @@ function render(){
   if(!modesFor().includes(MODE))MODE='std';
   let tabs;
   if(MODE==='staff')tabs=[['mod','Console'],['terms','Terms']];
-  else if(MODE==='er')tabs=[['er','Dispatch'],['terms','Terms']];
+  else if(MODE==='er')tabs=[['er','Response'],['terms','Terms']];
   else if(S.user&&!S.staff)tabs=[['portal','Portal'],['chains','Chain Servers'],['terms','Terms']];   // no Home screen for logged-in civilians
   else{tabs=[['home','Home'],['chains','Chain Servers']];if(S.user)tabs.push(['portal','Portal']);tabs.push(['terms','Terms'])}
   if(!tabs.some(x=>x[0]==tab))tab=tabs[0][0];
@@ -663,7 +663,7 @@ const isCivilian=()=>!!S.user&&!S.staff&&!S.ers;
     clean();ov=document.createElement('div');ov.className='ov';
     ov.innerHTML=`<div class="card" role="dialog" aria-modal="true" aria-label="Welcome"><div class="kick">|+-+| Republic Of Stilton |+-+|</div><h2>Welcome to the Republic of Stilton</h2>
       <p class="mu">Looks like it's your first time here. Would you like a quick tutorial (about 2 minutes)? It is completely optional, and you will not be asked again. It covers:</p>
-      <ul><li>Your <b>Portal</b>: bank, driver license, vehicle registration and emergency calls</li><li>Chain servers and the rules</li></ul>
+      <ul><li>Your <b>Portal</b>: bank, driver license and vehicle registration</li><li>Chain servers and the rules</li></ul>
       <div class="oacts"><button class="btn" id="i_go">Yes, show me</button><button class="btn s" id="i_skip">No thanks</button></div></div>`;
     document.body.appendChild(ov);
     const done=()=>{mark();clean()};
@@ -682,15 +682,14 @@ const isCivilian=()=>!!S.user&&!S.staff&&!S.ers;
     s.push({ch:'The basics',sel:'#nav [data-k=chains]',t:'Chain Servers',d:'Every city in the Republic. Open cities show a Join button. If you run your own city, you can apply to list it here and staff will review it.',pre:()=>go('chains')});
     s.push({ch:'The basics',sel:'#nav [data-k=terms]',t:'Terms of Service',d:'The rules for everyone in the community. Worth a read before you jump in.',pre:()=>go('terms')});
     if(!S.user){
-      s.push({ch:'Your account',sel:'#who',t:'Log in with Discord',d:'Log in to unlock your Portal: your bank, driver license, vehicle registration and emergency calls. You need to be a member of our Discord server.',pre:()=>go('home')});
+      s.push({ch:'Your account',sel:'#who',t:'Log in with Discord',d:'Log in to unlock your Portal: your bank, driver license and vehicle registration. You need to be a member of our Discord server.',pre:()=>go('home')});
     }else{
-      s.push({ch:'Your Portal',sel:'#nav [data-k=portal]',t:'Portal',d:'Your citizen hub. Everything about your character lives here: money, driver license, vehicles and emergency calls.',pre:()=>go('portal')});
-      s.push({ch:'Your Portal',sel:'#view .pt .st-tabs',t:'Portal sections',d:'These tabs move between sections. A number or ! next to a tab means something needs you, like an unpaid ticket or an active emergency call. A Tickets tab appears whenever you have a ticket from staff or police.',pre:()=>ptTab('over')});
+      s.push({ch:'Your Portal',sel:'#nav [data-k=portal]',t:'Portal',d:'Your citizen hub. Everything about your character lives here: money, driver license and vehicles.',pre:()=>go('portal')});
+      s.push({ch:'Your Portal',sel:'#view .pt .st-tabs',t:'Portal sections',d:'These tabs move between sections. A number or ! next to a tab means something needs you, like an unpaid ticket. A Tickets tab appears whenever you have a ticket from staff or police.',pre:()=>ptTab('over')});
       s.push({ch:'Your Portal',sel:'#view .pt .kpis',t:'Overview',d:'Your license status, bank total, registered vehicles and unpaid tickets at a glance. Click any box to jump to that section.',pre:()=>ptTab('over')});
       s.push({ch:'Your Portal',sel:'#pbody .card',t:'Bank',d:'StiltonBux (SB) is the money of the Republic. Open your account first, then deposit cash, withdraw, send money to other people by account ID and collect free income every 3 hours. You can also open one company account for a business.',pre:()=>ptTab('bank')});
       s.push({ch:'Your Portal',sel:PT,t:'Driver license',d:'Your license is Active by default, which means you can drive. If staff turn it off, it shows Inactive here and you must not drive until it is turned back on.',pre:()=>ptTab('lic')});
       s.push({ch:'Your Portal',sel:PT,t:'Vehicle registration',d:'Register your cars, SUVs, trucks, vans and buses here. Staff review every new registration, and you will see Pending, Approved or Denied (with a reason). Motorcycles are not allowed.',pre:()=>ptTab('veh')});
-      s.push({ch:'Your Portal',sel:PT,t:'Emergency services (911)',d:'Need help in the roleplay? Choose police, EMS or fire, say where you are and what is happening, and send it. Dispatch sees it straight away and you can watch which units are responding. Only use it for real emergencies: misuse can get you banned.',pre:()=>ptTab('sos')});
     }
     s.push({ch:'Done',t:'You\'re all set!',d:S.user?'That is everything. If you ever want to see this again, use the "Replay the tutorial" link at the bottom of the page.':'That is everything. Log in with Discord to get started.'});
     return s;
@@ -776,23 +775,21 @@ async function portal(){
   if(!S.user)return needLogin();
   clearInterval(window.__incT);
   const id=S.user.id;
-  clearTimeout(window.__sosT);
   $('#view').innerHTML=`<div class="st pt">${LOADER(1)}</div>`;
   try{await authed()}catch(e){say(e.message||fe(e));return}
   let perm=false;
   const sf=p=>Promise.resolve(p).catch(e=>{if(e&&e.code==='permission-denied')perm=true;return null});
-  const [l,v,t,a,em]=await Promise.all([
+  const [l,v,t,a]=await Promise.all([
     sf(db.collection('licenses').doc(id).get()),
     sf(db.collection('vehicles').where('ownerId','==',id).get()),
     sf(db.collection('tickets').where('to','==',id).get()),
-    sf(db.collection('accounts').doc(id).get()),sf(db.collection('emergency').doc(firebase.auth().currentUser.uid).get())]);
+    db.collection('accounts').doc(id).get().catch(()=>null)]);
   const lic=l&&l.exists?l.data():null,on=!lic||lic.status!=='inactive';   // active unless staff turn it off
   PCARS=v?v.docs.map(d=>({id:d.id,...d.data()})).sort((x,y)=>(y.created||0)-(x.created||0)):[];
   const tix=t?t.docs.map(d=>d.data()):[],open=tix.filter(x=>x.status==='unpaid');
   const acct=a&&a.exists?a.data():null,hasAcct=!!acct&&acct.owner!=='';
   const total=acct?(acct.cash||0)+(acct.bank||0):0;
-  const sos=em&&em.exists?em.data():null,sosOn=!!sos&&['Pending','En route','On scene'].includes(sos.status);
-  const tabs=[['over','Overview'],['bank','Bank'],['lic','License'],['veh','Vehicles',PCARS.length||''],['sos','Emergency',sosOn?'!':'']];
+  const tabs=[['over','Overview'],['bank','Bank'],['lic','License'],['veh','Vehicles',PCARS.length||'']];
   if(tix.length)tabs.push(['tix','Tickets',open.length||'']);
   if(!tabs.some(x=>x[0]===PT_TAB))PT_TAB='over';
   const head=`<div class="st-head"><div class="st-title"><h2>Citizen Portal</h2><span>${esc(S.user.name)}</span></div>
@@ -807,7 +804,6 @@ async function portal(){
       <div class="kpi click" onclick="ptTab('bank')"><div class="lbl">Bank total</div><div class="big">${hasAcct||acct?esc(SB(total)):'—'}</div><div class="mu">${acct?'cash + bank':'no account yet'}</div></div>
       <div class="kpi click" onclick="ptTab('veh')"><div class="lbl">Vehicles</div><div class="big">${PCARS.length}</div><div class="mu">${PCARS.filter(c=>vst(c)==='pending').length?PCARS.filter(c=>vst(c)==='pending').length+' awaiting review':'registered to you'}</div></div>
       <div class="kpi ${tix.length?'click':''}" ${tix.length?`onclick="ptTab('tix')"`:''}><div class="lbl">Unpaid tickets</div><div class="big ${open.length?'badc':''}">${open.length}</div><div class="mu">${open.length?esc(SB(open.reduce((s,x)=>s+(Number(x.amount)||0),0)))+' owed':'all clear'}</div></div></div>
-      ${sosOn?`<div class="panel alert"><h3>Your emergency request is active</h3><p class="sub">Status: ${esc(sos.status)}.</p><button class="btn" onclick="ptTab('sos')">View request</button></div>`:''}
       ${open.length?`<div class="panel alert"><h3>You have ${open.length} unpaid ticket${open.length>1?'s':''}</h3><p class="sub">Pay them from your bank balance.</p><button class="btn" onclick="ptTab('tix')">View tickets</button></div>`:''}
       ${!on?`<div class="panel alert"><h3>Your license is inactive</h3><p class="sub" style="margin:0">You should not drive until staff activate your license.</p></div>`:''}
       <div class="cols"><div class="panel"><h3>Your vehicles</h3><p class="sub">Registered to your account.</p>
@@ -816,7 +812,6 @@ async function portal(){
         <button onclick="ptTab('bank')">Open the bank</button>
         <button onclick="ptTab('veh')">Register a vehicle</button>
         <button onclick="ptTab('lic')">Check my license</button>
-        <button onclick="ptTab('sos')">Call emergency services</button>
         ${tix.length?`<button onclick="ptTab('tix')">My tickets</button>`:''}</div></div></div>`;
   }
   else if(PT_TAB==='lic'){
@@ -835,10 +830,6 @@ async function portal(){
       <p><button class="btn" onclick="regVehicle()">Register vehicle</button></p></div>
       <div class="panel"><h3>Your vehicles (${PCARS.length})</h3><p class="sub">You can register up to 5.</p>
       <table class="tbl"><tr><th>Plate</th><th>Type</th><th>Vehicle</th><th>Color</th><th>Status</th><th></th></tr>${PCARS.map(c=>`<tr><td><b>${esc(c.plate)}</b></td><td>${esc(c.type)}</td><td>${esc(c.make)} ${esc(c.model)}</td><td>${esc(c.color||'')}</td><td>${vtag(c)}</td><td style="text-align:right"><button class="btn s" onclick="delVehicle('${safeId(c.id)}')">Remove</button></td></tr>`).join('')||'<tr><td colspan="6" class="mu">No vehicles registered yet.</td></tr>'}</table></div>`;
-  }
-  else if(PT_TAB==='sos'){
-    body=sosBody(sos,sosOn,warn);
-    if(sosOn)window.__sosT=setTimeout(()=>{if(tab==='portal'&&PT_TAB==='sos')portal()},10000);
   }
   if(PT_TAB==='bank'||PT_TAB==='tix'){
     $('#view').innerHTML=`<div class="st pt">${head}${warn}<div id="pbody"></div></div>`;
@@ -964,7 +955,7 @@ async function staffDelVehicle(vid){
 })();
 
 const MODES={std:{name:'Standard',desc:'Everyday citizen view: bank, license, vehicles',dot:'#e11d2e'},
-  er:{name:'Emergency Response',desc:'Police, EMS and fire: dispatch, units, lookups',dot:'#ff2d2d'},
+  er:{name:'Emergency Response',desc:'Police, EMS and fire: duty hours, warrants, lookups',dot:'#ff2d2d'},
   staff:{name:'Staff',desc:'Staff console: bans, bank, licenses, reviews',dot:'#3b82f6'}};
 function modesFor(){return S.user?['std',...(S.ers?['er']:[]),...(S.staff?['staff']:[])]:['std']}
 function modeBtn(){return modesFor().length>1?`<button class="modebtn" id="modebtn" onclick="modeMenu(event)"><i style="background:${MODES[MODE].dot}"></i>${MODES[MODE].name}<span>&#9662;</span></button>`:''}
@@ -985,17 +976,14 @@ function setMode(m){
 }
 
 // =====================================================================
-// EMERGENCY RESPONSE CONSOLE: dispatch (incl. civilian 911), units, duty hours, warrants, lookups, BOLOs
+// EMERGENCY RESPONSE CONSOLE: duty hours, warrants, lookups, BOLOs
 // =====================================================================
-let ET='disp',ERPIN='',ERT=null,HB=null,HBWARN=false;
+let ET='hours',ERPIN='',ERT=null,HB=null,HBWARN=false;
 const GRACE=3*60e3;   // a unit is taken off duty this long after its last heartbeat (the person left the site)
 const erTab=k=>{ET=k;er()};
-const CALLTYPES=['Police','EMS','Fire','Other'],DEPTS=['Police','EMS','Fire','Dispatch','Other'],UST=['Available','En route','On scene','Busy','Off duty'];
+const DEPTS=['Police','EMS','Fire','Dispatch','Other'],UST=['Available','En route','On scene','Busy','Off duty'];
 const dtag=d=>`<span class="tag ${d==='Police'?'p':d==='EMS'?'e':d==='Fire'?'f':''}">${esc(d||'Other')}</span>`;
-const ptag=p=>`<span class="tag ${p==1?'r':p==2?'a':''}">P${esc(p||3)}</span>`;
 const stag=s=>`<span class="tag ${s==='Available'?'g':s==='Off duty'||s==='Pending'||s==='Closed'||s==='Cancelled'?'':'a'}">${esc(s||'')}</span>`;
-const NEXTST={Pending:['En route','Mark en route'],'En route':['On scene','Mark on scene'],'On scene':['Closed','Clear call']};
-const keyInfo=k=>({col:k[0]==='x'?'emergency':'calls',id:k.slice(2)});
 const fmtMin=m=>{m=Math.max(0,Math.round(m));return m<60?m+'m':Math.floor(m/60)+'h '+String(m%60).padStart(2,'0')+'m'};
 const myCallsign=()=>{let c='';try{c=localStorage.getItem('ros_cs')||''}catch{}
   if(!c){c=(prompt('Your callsign (for example P-12)')||'').trim().slice(0,12);if(c)try{localStorage.setItem('ros_cs',c)}catch{}}return c};
@@ -1047,19 +1035,15 @@ async function er(){
   const id=S.user.id;let me=null;
   try{await authed();const d=await db.collection('units').doc(id).get();me=d.exists?d.data():null}catch{}
   const duty=effSt(me)!=='Off duty',wasAuto=!!me&&me.status!=='Off duty'&&!duty;
-  const nav=[['disp','Dispatch'],['units','Units'],['hours','Hours'],['warr','Warrants'],['look','Lookup'],['bolo','BOLOs']];
+  const nav=[['hours','Hours'],['warr','Warrants'],['look','Lookup'],['bolo','BOLOs']];
   const head=`<div class="st-head"><div class="st-title"><h2>Emergency Response</h2><span>Police &middot; EMS &middot; Fire</span></div>
     <div class="st-tabs">${nav.map(([k,l])=>`<button class="${ET===k?'on':''}" onclick="erTab('${k}')">${l}</button>`).join('')}</div>
     <div class="st-r"><span class="st-stat ${duty?'':'bad'}">${duty?'On duty &middot; '+esc(me.callsign||''):'Off duty'}</span><input id="e_pin" type="password" placeholder="Duty PIN" title="Duty PIN, used for every action here" name="ros-duty-pin" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" oninput="ERPIN=this.value.trim()" value="${esc(ERPIN)}"></div></div>`;
   let form='';
-  if(ET==='disp')form=`<div class="panel"><h3>New call for service</h3><p class="sub">Log a call so units can respond. Calls from civilians (911) appear in the list below automatically. Uses the duty PIN at the top right.</p>
-    <div class="row"><div><label>Type</label><select id="cl_type">${CALLTYPES.map(x=>`<option>${x}</option>`).join('')}</select></div><div><label>Priority</label><select id="cl_pri"><option value="1">1 - Emergency</option><option value="2" selected>2 - Urgent</option><option value="3">3 - Routine</option></select></div></div>
-    <div class="row"><div><label>Location *</label><input id="cl_loc" maxlength="80" placeholder="e.g. Main St &amp; 4th Ave"></div><div><label>Details *</label><input id="cl_det" maxlength="200" placeholder="e.g. Two-vehicle collision, one injured"></div></div>
-    <p><button class="btn" onclick="newCall()">Create call</button></p></div>`;
-  else if(ET==='units'){let cs='',dp='';try{cs=localStorage.getItem('ros_cs')||'';dp=localStorage.getItem('ros_dept')||''}catch{}
+  if(ET==='hours'){let cs='',dp='';try{cs=localStorage.getItem('ros_cs')||'';dp=localStorage.getItem('ros_dept')||''}catch{}
     cs=(me&&me.callsign)||cs;dp=(me&&me.dept)||dp||(S.police?'Police':'EMS');
     form=`${wasAuto?`<div class="panel alert"><h3>You were taken off duty</h3><p class="sub" style="margin:0">You left the site, so your duty ended at ${esc(new Date(lastSeen(me)).toLocaleTimeString())} and the time was logged. Set your status below to go back on duty.</p></div>`:''}
-    <div class="panel"><h3>My status</h3><p class="sub">Set your callsign, department and status so dispatch can see you. You stay on duty while this site is open, and go off duty about 3 minutes after you leave it. Uses the duty PIN at the top right.</p>
+    <div class="panel"><h3>My status</h3><p class="sub">Set your callsign, department and status to go on or off duty. You stay on duty while this site is open, and go off duty about 3 minutes after you leave it. Uses the duty PIN at the top right.</p>
     <div class="row"><div><label>Callsign *</label><input id="u_cs" maxlength="12" placeholder="e.g. P-12" value="${esc(cs)}"></div><div><label>Department</label><select id="u_dept">${DEPTS.map(x=>`<option ${x===dp?'selected':''}>${x}</option>`).join('')}</select></div></div>
     <label>Status</label><select id="u_st">${UST.map(x=>`<option ${(duty?me.status:'Available')===x?'selected':''}>${x}</option>`).join('')}</select>
     <p><button class="btn" onclick="setUnit()">Update status</button></p></div>`}
@@ -1082,57 +1066,12 @@ async function er(){
 async function erLoad(){
   const box=$('#erdata');if(!box||tab!=='er')return;clearTimeout(ERT);
   try{await authed();
-    if(ET==='disp')await loadCalls(box);else if(ET==='units')await loadUnits(box);else if(ET==='hours')await loadHours(box);
+    if(ET==='hours')await loadHours(box);
     else if(ET==='warr')await loadWarrants(box);else if(ET==='bolo')await loadBolos(box)}
   catch(e){box.innerHTML=`<div class="panel"><p class="mu" style="margin:0">Could not load: ${esc(e&&e.code==='permission-denied'?'publish the newest Firestore rules':(e&&e.message)||'error')}</p></div>`}
   if(ET!=='look'&&ET!=='hours')ERT=setTimeout(()=>{if(tab==='er')erLoad()},15000);
 }
 
-// ---------- dispatch (staff-logged calls + civilian 911 requests) ----------
-const isOpenCall=c=>c.status!=='Closed'&&c.status!=='Cancelled';
-async function loadCalls(box){
-  const [cq,xq]=await Promise.all([db.collection('calls').orderBy('created','desc').limit(60).get(),db.collection('emergency').orderBy('created','desc').limit(40).get().catch(()=>null)]);
-  const rows=cq.docs.map(d=>({...d.data(),key:'c_'+d.id,id:d.id,col:'calls'}));
-  if(xq)xq.docs.forEach(d=>rows.push({...d.data(),key:'x_'+d.id,id:d.id,col:'emergency',civ:true}));
-  window.__calls={};rows.forEach(c=>window.__calls[c.key]=c);
-  const open=rows.filter(isOpenCall).sort((a,b)=>(a.priority||3)-(b.priority||3)||(a.created||0)-(b.created||0));
-  const closed=rows.filter(c=>!isOpenCall(c)).sort((a,b)=>(b.updated||b.created||0)-(a.updated||a.created||0)).slice(0,8);
-  box.innerHTML=`<div class="kpis"><div class="kpi"><div class="lbl">Open calls</div><div class="big">${open.length}</div><div class="mu">waiting or in progress</div></div>
-    <div class="kpi"><div class="lbl">Priority 1</div><div class="big ${open.some(c=>c.priority==1)?'badc':''}">${open.filter(c=>c.priority==1).length}</div><div class="mu">emergencies</div></div>
-    <div class="kpi"><div class="lbl">No unit yet</div><div class="big ${open.some(c=>!(c.units||[]).length)?'badc':''}">${open.filter(c=>!(c.units||[]).length).length}</div><div class="mu">need a responder</div></div>
-    <div class="kpi"><div class="lbl">Civilian 911</div><div class="big">${open.filter(c=>c.civ).length}</div><div class="mu">open requests</div></div></div>
-    <div class="panel"><div class="hl"><h3>Active calls (${open.length})</h3><span class="mu" style="font-size:.85em">Refreshes every 15 seconds</span></div><p class="sub">Highest priority first.</p>
-    <table class="tbl"><tr><th>Pri</th><th>Type</th><th>Location</th><th>Status</th><th>Units</th><th>Age</th><th></th></tr>${open.map(c=>{const n=NEXTST[c.status]||NEXTST.Pending;
-      return `<tr><td>${ptag(c.priority)}</td><td>${dtag(c.type)}${c.civ?' <span class="tag r">911</span>':''}</td><td><b>${esc(c.location)}</b><br><span class="mu">${esc(c.details||'')}</span>${c.civ?`<br><span class="mu">Caller: ${esc(c.callerName||'unknown')}</span>`:''}</td><td>${stag(c.status)}</td><td>${(c.units||[]).map(u=>`<span class="tag p">${esc(u)}</span>`).join(' ')||'<span class="mu">none</span>'}</td><td class="mu">${ago(c.created)}</td>
-      <td style="text-align:right;white-space:nowrap"><button class="btn s" onclick="callAttach('${safeId(c.key)}')">Attach me</button> <button class="btn" onclick="callNext('${safeId(c.key)}')">${n[1]}</button></td></tr>`}).join('')||'<tr><td colspan="7" class="mu">No open calls. All quiet.</td></tr>'}</table></div>
-    ${closed.length?`<div class="panel"><h3>Recently cleared</h3><table class="tbl"><tr><th>Type</th><th>Location</th><th>Result</th><th>Units</th><th>Opened</th></tr>${closed.map(c=>`<tr><td>${dtag(c.type)}${c.civ?' <span class="tag r">911</span>':''}</td><td>${esc(c.location)}<br><span class="mu">${esc(c.details||'')}</span></td><td>${stag(c.status)}</td><td>${(c.units||[]).map(esc).join(', ')||'—'}</td><td class="mu">${ago(c.created)}</td></tr>`).join('')}</table></div>`:''}`;
-}
-async function newCall(){
-  const type=$('#cl_type').value,pri=+$('#cl_pri').value,loc=$('#cl_loc').value.trim(),det=$('#cl_det').value.trim();
-  if(!loc||!det)return say('Enter the location and the details');
-  const cid=newId('calls'),now=Date.now();
-  try{await erWrite('e_c_'+cid,b=>b.set(db.collection('calls').doc(cid),{type,priority:pri,location:loc.slice(0,80),details:det.slice(0,200),status:'Pending',units:[],by:S.user.id,by_name:S.user.name.slice(0,80),created:now,updated:now}));
-    say('Call created.');er()}catch(e){say(e.message||fe(e))}
-}
-async function callAttach(key){
-  const c=(window.__calls||{})[key];if(!c)return;const cs=myCallsign();if(!cs)return say('A callsign is needed to attach to a call');
-  const k=keyInfo(key);
-  try{await erWrite((k.col==='emergency'?'e_x_':'e_c_')+k.id,b=>b.update(db.collection(k.col).doc(k.id),{units:FV().arrayUnion(cs),status:c.status==='Pending'?'En route':c.status,updated:Date.now()}));say('Attached as '+cs+'.');erLoad()}catch(e){say(e.message||fe(e))}
-}
-async function callNext(key){
-  const c=(window.__calls||{})[key];if(!c)return;const n=NEXTST[c.status]||NEXTST.Pending,k=keyInfo(key);
-  try{await erWrite((k.col==='emergency'?'e_x_':'e_c_')+k.id,b=>b.update(db.collection(k.col).doc(k.id),{status:n[0],updated:Date.now()}));say(n[0]==='Closed'?'Call cleared.':'Call is now '+n[0]+'.');erLoad()}catch(e){say(e.message||fe(e))}
-}
-
-// ---------- units ----------
-async function loadUnits(box){
-  const q=await db.collection('units').orderBy('updated','desc').limit(100).get(),now=Date.now();
-  const rows=q.docs.map(d=>{const u={id:d.id,...d.data()};u.eff=effSt(u);return u}).filter(u=>u.eff!=='Off duty'||now-lastSeen(u)<12*3600e3),on=rows.filter(u=>u.eff!=='Off duty');
-  const n=d=>on.filter(u=>u.dept===d).length;
-  box.innerHTML=`<div class="kpis"><div class="kpi"><div class="lbl">Police</div><div class="big">${n('Police')}</div><div class="mu">on duty</div></div><div class="kpi"><div class="lbl">EMS</div><div class="big">${n('EMS')}</div><div class="mu">on duty</div></div><div class="kpi"><div class="lbl">Fire</div><div class="big">${n('Fire')}</div><div class="mu">on duty</div></div><div class="kpi"><div class="lbl">Total on duty</div><div class="big">${on.length}</div><div class="mu">all departments</div></div></div>
-    <div class="panel"><div class="hl"><h3>Unit roster</h3><span class="mu" style="font-size:.85em">Refreshes every 15 seconds</span></div><p class="sub">Units drop to Off duty about 3 minutes after they leave the site.</p>
-    <table class="tbl"><tr><th>Callsign</th><th>Name</th><th>Dept</th><th>Status</th><th>On duty for</th><th>Last seen</th></tr>${rows.map(u=>`<tr><td><b>${esc(u.callsign||'—')}</b></td><td>${esc(u.name||'')}</td><td>${dtag(u.dept)}</td><td>${stag(u.eff)}</td><td>${u.eff!=='Off duty'&&u.onSince?esc(fmtMin((now-u.onSince)/60000)):'—'}</td><td class="mu">${ago(lastSeen(u))}</td></tr>`).join('')||'<tr><td colspan="6" class="mu">Nobody has set a status yet.</td></tr>'}</table></div>`;
-}
 async function setUnit(){
   const cs=$('#u_cs').value.trim().slice(0,12),dept=$('#u_dept').value,status=$('#u_st').value;
   if(!cs)return say('Enter your callsign');
@@ -1160,7 +1099,7 @@ async function loadHours(box){
     <div class="kpi"><div class="lbl">Last 7 days</div><div class="big">${esc(fmtMin(v.week))}</div><div class="mu">on duty</div></div>
     <div class="kpi"><div class="lbl">All time</div><div class="big">${esc(fmtMin(v.total))}</div><div class="mu">logged</div></div></div>
     <div class="panel"><h3>My duty log</h3><p class="sub">Time is logged while you are on duty and the site is open. If you close the site, you go off duty after about 3 minutes and the time is logged up to when you left.</p>
-    <table class="tbl"><tr><th>Started</th><th>Ended</th><th>Length</th><th>Note</th></tr>${v.live?`<tr><td>${esc(new Date(me.onSince).toLocaleString())}</td><td class="mu">now</td><td>${esc(fmtMin(v.live/60000))}</td><td><span class="tag g">on duty</span></td></tr>`:''}${v.sess.slice(0,15).map(x=>`<tr><td>${esc(new Date(x.s).toLocaleString())}</td><td>${esc(new Date(x.e).toLocaleString())}</td><td>${esc(fmtMin((x.e-x.s)/60000))}</td><td class="mu">${x.auto?'Left the site':'Signed off'}</td></tr>`).join('')||(v.live?'':'<tr><td colspan="4" class="mu">No duty time logged yet. Go on duty from the Units tab.</td></tr>')}</table></div>${all}`;
+    <table class="tbl"><tr><th>Started</th><th>Ended</th><th>Length</th><th>Note</th></tr>${v.live?`<tr><td>${esc(new Date(me.onSince).toLocaleString())}</td><td class="mu">now</td><td>${esc(fmtMin(v.live/60000))}</td><td><span class="tag g">on duty</span></td></tr>`:''}${v.sess.slice(0,15).map(x=>`<tr><td>${esc(new Date(x.s).toLocaleString())}</td><td>${esc(new Date(x.e).toLocaleString())}</td><td>${esc(fmtMin((x.e-x.s)/60000))}</td><td class="mu">${x.auto?'Left the site':'Signed off'}</td></tr>`).join('')||(v.live?'':'<tr><td colspan="4" class="mu">No duty time logged yet. Set your callsign and go on duty above.</td></tr>')}</table></div>${all}`;
 }
 
 // ---------- warrants ----------
@@ -1265,34 +1204,6 @@ async function newBolo(){
 async function clearBolo(id){
   if(!id)return;
   try{await erWrite('e_b_'+id,b=>b.update(db.collection('bolos').doc(id),{status:'cleared',cleared_by:S.user.name.slice(0,80),updated:Date.now()}));say('BOLO cleared.');erLoad()}catch(e){say(e.message||fe(e))}
-}
-
-// =====================================================================
-// CIVILIAN 911: shown on the citizen Portal, lands in the Dispatch list
-// =====================================================================
-function sosBody(sos,on,warn){
-  const note=sos&&!on?`<p class="mu" style="margin:0 0 1em">Your last request was ${esc(String(sos.status).toLowerCase())}.</p>`:'';
-  if(on)return warn+`<div class="panel alert"><h3>Help has been requested</h3><p class="sub">Dispatch can see your request. Stay safe, and stay where you are if you can.</p>
-    <table class="tbl"><tr><th>Service</th><th>Location</th><th>What is happening</th><th>Status</th><th>Responding</th></tr><tr><td>${dtag(sos.type)}</td><td>${esc(sos.location)}</td><td>${esc(sos.details)}</td><td>${stag(sos.status)}</td><td>${(sos.units||[]).map(u=>`<span class="tag p">${esc(u)}</span>`).join(' ')||'<span class="mu">waiting for a unit</span>'}</td></tr></table>
-    <p style="margin-top:1em"><button class="btn s" onclick="cancelSOS()">Cancel request</button> <span class="mu">This page updates every 10 seconds.</span></p></div>`;
-  return warn+`<div class="panel alert"><h3>Call emergency services</h3><p class="sub">Send a request to police, EMS or fire dispatch. Only use this for real emergencies in the roleplay. Misuse can get you banned.</p>${note}
-    <div class="row"><div><label>Who do you need? *</label><select id="sos_type"><option>Police</option><option>EMS</option><option>Fire</option></select></div><div><label>Where are you? *</label><input id="sos_loc" maxlength="80" placeholder="e.g. Main St &amp; 4th Ave"></div></div>
-    <label>What is happening? *</label><input id="sos_det" maxlength="200" placeholder="e.g. My car crashed and someone is hurt">
-    <label style="display:flex;gap:10px;align-items:flex-start;text-transform:none;letter-spacing:0;font-size:.9rem"><input id="sos_danger" type="checkbox" style="width:auto;margin-top:3px"><span>Someone is in immediate danger</span></label>
-    <p><button class="btn" onclick="sendSOS()">Send emergency request</button></p></div>`;
-}
-async function sendSOS(){
-  const type=$('#sos_type').value,loc=$('#sos_loc').value.trim(),det=$('#sos_det').value.trim(),danger=$('#sos_danger').checked;
-  if(!loc||!det)return say('Enter where you are and what is happening');
-  try{const u=await authed(),now=Date.now();
-    await db.collection('emergency').doc(u.uid).set({type,priority:danger?1:2,location:loc.slice(0,80),details:det.slice(0,200),status:'Pending',units:[],callerId:S.user.id,callerName:S.user.name.slice(0,80),created:now,updated:now});
-    say('Your request was sent. Dispatch can see it now.');PT_TAB='sos';portal()}
-  catch(e){say(e&&e.code==='permission-denied'?'Blocked. You may already have an active request, or the database rules need to be published.':(e.message||fe(e)))}
-}
-async function cancelSOS(){
-  if(!confirm('Cancel your emergency request?'))return;
-  try{const u=await authed();await db.collection('emergency').doc(u.uid).update({status:'Cancelled',updated:Date.now()});say('Request cancelled.');portal()}
-  catch(e){say(e&&e.code==='permission-denied'?'Blocked by the database rules.':(e.message||fe(e)))}
 }
 
 // staff review links in Staff mode open the normal Chain Servers page (Staff mode only has Console + Terms)
