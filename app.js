@@ -335,9 +335,8 @@ async function mod(){
   try{pend=(await db.collection('chains').get()).docs.filter(d=>{const r=d.data().review;return r==='pending'||!r}).length}catch{}
   let regPend=0;try{await authed();regPend=(await db.collection('vehicles').where('status','==','pending').get()).size}catch{}
   const down=!!(SITE&&SITE.down);
-  const nav=[['over','Overview'],['look','Lookup'],['bank','Bank'],['tix','Tickets'],['lic','Licenses'],['reg','Registrations'],['bans','Bans'],['adm','Admins'],['law','Laws'],['site','Site']];
+  const nav=[['over','Overview'],['look','Lookup'],['bank','Bank'],['tix','Tickets'],['lic','Licenses'],['reg','Registrations'],['bans','Bans'],['adm','Admins'],['site','Site']];
   let adm=[];if(DT==='adm'){try{adm=(await db.collection('admins').get()).docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.created||0)-(a.created||0))}catch(e){say(e&&e.code==='permission-denied'?'Publish the newest rules':fe(e))}}
-  let laws={text:'',meta:null};if(DT==='law'){try{const d=await db.collection('laws').doc('main').get();if(d.exists){laws.meta=d.data();laws.text=String(d.data().text||'')}}catch(e){say(e&&e.code==='permission-denied'?'Publish the newest rules':fe(e))}}
   let tix=[];if(DT==='tix'){try{await authed();tix=(await db.collection('tickets').orderBy('created','desc').limit(60).get()).docs.map(d=>({id:d.id,...d.data()}))}catch(e){say(e&&e.code==='permission-denied'?'Publish the newest rules':fe(e))}}
   let lics=[],vehs=[];if(DT==='lic'||DT==='reg'){try{await authed();[lics,vehs]=await Promise.all([db.collection('licenses').get().then(q=>q.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.updated||0)-(a.updated||0))),db.collection('vehicles').orderBy('created','desc').limit(100).get().then(q=>q.docs.map(d=>({id:d.id,...d.data()})))])}catch(e){say(e&&e.code==='permission-denied'?'Publish the newest rules':fe(e))}}
   const head=`<div class="st-head"><div class="st-title"><h2>Staff Console</h2><span>Republic of Stilton</span></div>
@@ -379,7 +378,6 @@ async function mod(){
     <div class="row"><div><label>Discord user ID *</label><input id="ad_id" inputmode="numeric" placeholder="e.g. 123456789012345678"></div><div><label>Name or note</label><input id="ad_name" maxlength="80" placeholder="e.g. Jordan"></div></div>
     <p><button class="btn" onclick="addAdmin()">Give admin</button></p></div>
     <div class="panel"><h3>Admins added here (${adm.length})</h3><table class="tbl"><tr><th>User</th><th>Added by</th><th>When</th><th></th></tr>${adm.map(x=>`<tr><td><b>${esc(x.name||'—')}</b><br><span class="mu">${esc(x.id)}</span></td><td>${esc(x.by_name||'')}</td><td class="mu">${esc(new Date(x.created||0).toLocaleString())}</td><td style="text-align:right"><button class="btn s" onclick="removeAdmin('${safeId(x.id)}')">Remove</button></td></tr>`).join('')||'<tr><td class="mu" colspan="4">Nobody added yet. Staff-role members on Discord are not listed here.</td></tr>'}</table></div>`;
-  else if(DT==='law')body=lawsPanel(laws.text,laws.meta);
   else if(DT==='lic')body=licPanel(lics);
   else if(DT==='reg')body=regPanel(vehs,lics);
   else if(DT==='bans')body=`<div class="panel"><h3>Ban a user</h3><p class="sub">Banning someone also bans every device they have logged in from. Uses the staff PIN at the top right.</p>
@@ -1273,6 +1271,166 @@ async function clearBolo(id){
 // LAW BOT: bottom-left helper. Staff paste the laws as plain text in the Laws tab; the bot searches that text
 // (keyword matching, not an AI: it only knows what staff wrote)
 // =====================================================================
+// ---------------------------------------------------------------------
+// BUILT-IN COPY OF THE LAWS (a backup). The Law Bot reads the file laws.txt first; this is only used if that file is missing.
+// To change laws, edit laws.txt on GitHub instead (no need to touch this).
+// ---------------------------------------------------------------------
+const LAWS_TEXT=`
+CONSTITUTION OF STILTON CITY
+Foundational Law of Stilton City
+Preamble
+We, the people of Stilton City, establish this Constitution to maintain order, protect individual rights, ensure fair justice, limit the abuse of governmental authority, and promote the safety and prosperity of our community.
+This Constitution shall serve as the supreme governing document of Stilton City. All city laws, government departments, public officials, and judicial proceedings shall operate in accordance with its provisions.
+
+Article I  Supremacy of the Constitution
+Section 1. Supreme Authority
+This Constitution shall be the highest legal authority within Stilton City. No city law, departmental policy, government order, or official decision may override the Constitution.
+Section 2. Invalid Laws
+Any law or governmental action that directly conflicts with this Constitution shall be considered invalid to the extent of that conflict.
+Section 3. Duty to Uphold
+All public officials, police officers, judges, and government departments shall uphold this Constitution while performing their official duties.
+
+Article II  Rights of Citizens
+Section 1. Equal Treatment Under the Law
+Every person within Stilton City shall be entitled to equal protection under the law. No person shall receive unfair treatment solely because of their identity, occupation, status, personal relationships, or political position.
+Section 2. Freedom of Expression
+Citizens shall have the right to express opinions, criticize the government, and peacefully discuss public matters, provided their conduct does not violate valid city laws.
+Section 3. Protection from Unlawful Arrest
+No person shall be arrested or detained without a lawful basis under the Stilton City Laws. Arrests must be supported by reasonable grounds as required by the applicable law and procedures.
+Section 4. Fair Trial
+Every person accused of a crime shall be entitled to a fair and impartial hearing before an authorized judicial official.
+The accused shall be informed of the allegations against them and given a reasonable opportunity to respond.
+Section 5. Presumption of Innocence
+A person accused of an offense shall be presumed innocent until responsibility is established through the applicable judicial process.
+Section 6. Protection from Excessive Punishment
+No person shall receive a punishment that exceeds the penalties authorized by law for the offense committed.
+Section 7. Privacy and Searches
+Government officials shall not conduct unlawful searches or seize property without the legal justification or authorization required by city law.
+Section 8. Protection of Property
+No person shall unlawfully steal, destroy, seize, or interfere with another person's property.
+Section 9. Right to Petition
+Citizens may submit complaints, appeals, and requests for government review without unlawful retaliation.
+
+Article III  Structure of Government
+Section 1. Establishment of Government
+Stilton City shall maintain a government responsible for administering city affairs, enforcing laws, maintaining public safety, and overseeing the administration of justice.
+Section 2. Separation of Powers
+Government authority shall be divided among the following functions:
+Legislative Authority: Creates, reviews, amends, and repeals city laws.
+Executive Authority: Administers city government and oversees authorized departments.
+Judicial Authority: Interprets city laws, conducts judicial proceedings, and determines legal responsibility.
+Where practical, these functions shall remain separate to prevent any single official or department from exercising unchecked authority.
+Section 3. Limits of Authority
+No official may exercise powers that have not been granted by this Constitution, an applicable city law, or a valid delegation of authority.
+
+Article IV  Legislative Authority
+Section 1. Lawmaking Power
+The designated legislative authority shall have the power to propose, debate, approve, amend, and repeal laws governing Stilton City.
+Section 2. Publication of Laws
+New laws and amendments must be officially documented and made reasonably accessible to the public before enforcement, except where an established emergency procedure lawfully provides otherwise.
+Section 3. Legal Clarity
+City laws should clearly define prohibited conduct, authorized penalties, and the officials responsible for enforcement.
+Section 4. Restrictions on Lawmakers
+No lawmaker may use legislative authority solely to punish a personal enemy, protect a friend from lawful consequences, or grant themselves immunity from city law.
+
+Article V  Executive Authority
+Section 1. Administration
+The executive authority shall administer city operations, coordinate departments, and carry out laws enacted under this Constitution.
+Section 2. Government Orders
+Executive orders must remain within the authority granted by this Constitution and existing city law. An executive order may not independently override the Constitution or repeal an enacted law.
+Section 3. Accountability
+Executive officials shall be subject to investigation and disciplinary action for corruption, abuse of authority, unlawful interference, or other misconduct established through the applicable procedures.
+Section 4. Emergency Powers
+Emergency powers may be exercised only when authorized by city law or a valid emergency provision. Such powers shall be limited to what is reasonably necessary to address the emergency and shall not permanently eliminate constitutional protections.
+
+Article VI  Police and Public Safety
+Section 1. Authority of Police
+Police officers shall enforce the Stilton City Laws, protect the public, investigate suspected offenses, and respond to emergencies within their authorized jurisdiction.
+Section 2. Limits on Police Power
+Police officers shall not knowingly conduct unlawful arrests, fabricate evidence, falsify reports, abuse detainees, or use their position for personal gain.
+Section 3. Equal Enforcement
+Laws shall be enforced fairly and consistently. Personal disagreements, friendships, rank, wealth, and departmental affiliation shall not determine whether a person is subject to the law.
+Section 4. Lawful Orders
+Officers may issue lawful orders within their authority. An order that is clearly unlawful shall not become valid merely because it was issued by a superior.
+Section 5. Departmental Accountability
+Police and public safety departments shall maintain reasonable procedures for receiving complaints, reviewing misconduct, and holding personnel accountable.
+Section 6. Emergency Services
+Fire, medical, and other authorized emergency services shall be permitted to perform their duties without unlawful interference. Their authority shall remain limited to their designated responsibilities and applicable laws.
+
+Article VII  Judicial Authority
+Section 1. Independence of the Judiciary
+Judges shall make decisions based on the Constitution, applicable city laws, and the evidence presented. Government officials and department leadership shall not improperly dictate judicial outcomes.
+Section 2. Judicial Powers
+Authorized judges may conduct hearings, determine guilt or innocence, interpret applicable laws, impose lawful sentences, and issue other rulings permitted by city law.
+Section 3. Impartiality
+Judges shall not knowingly favor or disadvantage a person because of friendship, hostility, rank, government position, or personal interest.
+A judge with a significant conflict of interest should disclose it and withdraw from the case when required by the applicable rules.
+Section 4. Sentencing
+All criminal penalties must fall within the limits established by the applicable law. A judge may consider the seriousness of the offense, relevant circumstances, prior offenses, and other factors permitted by law.
+Section 5. Appeals
+A person subject to a judicial ruling may request an appeal when an appeal procedure is provided by city law. Appeals shall be reviewed by an authorized official or body that is not improperly influenced by the original decision-maker.
+
+Article VIII  Criminal Law and Due Process
+Section 1. Defined Offenses
+No person shall be punished for an offense that was not prohibited by an applicable law at the time the conduct occurred.
+Section 2. Burden of Proof
+The authority bringing criminal charges shall be responsible for presenting sufficient evidence to establish the alleged offense under the city's adopted standard of proof.
+Section 3. Evidence
+Evidence must not knowingly be fabricated, unlawfully manipulated, or deliberately misrepresented during an investigation or judicial proceeding.
+Section 4. Proportional Punishment
+Punishments shall be proportionate to the offense and must comply with the penalties established by the Stilton City Laws.
+Section 5. Multiple Offenses
+A person accused of multiple offenses may face separate charges where permitted by law. The court shall consider applicable sentencing rules and shall not impose unauthorized penalties.
+Section 6. No Arbitrary Punishment
+No officer, judge, or government official may impose a criminal penalty solely on personal preference or without legal authority.
+
+Article IX  Public Officials and Government Accountability
+Section 1. Duty of Office
+All public officials shall perform their duties honestly, responsibly, and within the limits of their authority.
+Section 2. Abuse of Power
+No public official may use governmental authority to threaten, intimidate, unlawfully punish, exploit, or improperly benefit themselves or another person.
+Section 3. Conflicts of Interest
+Officials shall disclose significant conflicts of interest when required and shall not use their positions to improperly influence matters involving their personal interests.
+Section 4. Investigation of Misconduct
+Allegations of serious official misconduct shall be subject to a fair review by an authorized and appropriately impartial authority.
+Section 5. Removal from Office
+An official may be suspended or removed from office for serious misconduct, incapacity, corruption, or other grounds established by the applicable law and procedures.
+Section 6. No Automatic Immunity
+Holding public office, police rank, or departmental authority shall not automatically exempt a person from criminal responsibility.
+
+Article X  Amendment of the Constitution
+Section 1. Proposal of Amendments
+A constitutional amendment may be proposed by an authorized lawmaker or through another proposal process established by city law.
+Section 2. Approval
+An amendment shall require approval through the city's designated constitutional amendment procedure. The required vote, approving authority, and any additional conditions must be established by the governing rules.
+Section 3. Official Record
+Every approved amendment shall be recorded with its wording, approval date, and effective date.
+Section 4. Protection of Core Principles
+No amendment shall be considered valid if it bypasses the amendment procedure established by this Constitution.
+Section 5. Effective Date
+An amendment shall take effect on its specified effective date or, if none is specified, when it has been formally approved and officially published.
+
+Article XI  Interpretation and Enforcement
+Section 1. Constitutional Interpretation
+Questions concerning the interpretation of this Constitution shall be decided by the authorized judicial authority, subject to any applicable appeal procedure.
+Section 2. Conflicting Laws
+Where an ordinary city law conflicts with this Constitution, the Constitution shall prevail.
+Section 3. Enforcement
+All government departments and public officials shall respect and enforce this Constitution within their lawful responsibilities.
+Section 4. Severability
+If a particular provision is found invalid, the remaining provisions shall continue in effect to the extent that they can operate independently.
+
+Article XII  Ratification and Commencement
+Section 1. Ratification
+This Constitution shall become official once approved through the recognized governing process of Stilton City.
+Section 2. Commencement
+Upon taking effect, this Constitution shall establish the foundational rules governing city authority, citizen protections, public safety, and the administration of justice.
+Section 3. Existing Laws
+Existing Stilton City Laws shall remain in effect to the extent that they do not conflict with this Constitution. Conflicting provisions must be reviewed and amended or repealed as appropriate.
+
+End of the Constitution of Stilton City
+All city laws, departments, and public officials are subordinate to this Constitution. No person is above the law.
+`;
 let LAWS=null,LAWT=0,LAWTEXT='';
 const LSTOP=new Set('a an the is are was be been am it its in on at to of for and or but if so do does did can could should would may might will shall i me my we our you your they them their he she his her this that these those there here with without about what whats how when where why who whom any anyone someone legal illegal allowed allow ok okay permitted permit law laws rule rules able get have has had just really very much many some go going'.split(' '));
 const lstem=w=>{const r=w.replace(/(ing|es|ed|s)$/,'');return r.length>=4?r:w};
@@ -1287,33 +1445,41 @@ function lawVerdict(t){
 }
 const LVERD={illegal:{t:'Illegal',c:'#ff8a8a',i:'⛔'},legal:{t:'Legal',c:'#7ee2a1',i:'✅'},restricted:{t:'Legal with conditions',c:'#ffb86b',i:'⚠️'},info:{t:'Law',c:'#7aa7ff',i:'⚖️'}};
 function parseLaws(text){
-  const out=[];let head='';
+  const out=[];let art='',cur=null;
+  const flush=()=>{if(cur){cur.text=cur.body.join(' ').trim();delete cur.body;if(cur.title||cur.text)out.push(cur);cur=null}};
   String(text||'').split(/\r?\n/).forEach(raw=>{
     let l=raw.trim();if(!l)return;
-    const isHead=/^#+\s/.test(l)||(/:$/.test(l)&&l.length<60)||(l===l.toUpperCase()&&/[A-Z]/.test(l)&&l.length<60);
-    if(isHead){head=l.replace(/^#+\s*/,'').replace(/:$/,'');return}
+    if(/^Article\s+[IVXLC\d]+/i.test(l)){flush();art=l.replace(/\s{2,}/g,' - ');return}
+    if(/^Section\s+\d+\./i.test(l)){flush();cur={head:art,title:l,body:[]};return}
+    if(cur){cur.body.push(l);return}
+    const isHead=/^#+\s/.test(l)||(/:$/.test(l)&&l.length<60)||(l===l.toUpperCase()&&/[A-Z]/.test(l)&&l.length<70);
+    if(isHead){art=l.replace(/^#+\s*/,'').replace(/:$/,'');return}
     l=l.replace(/^[-*•]\s*|^\d+[.)]\s*/,'');
-    if(l.length>1)out.push({head,text:l});
+    if(l.length>1)out.push({head:art,title:'',text:l});
   });
-  return out;
+  flush();return out;
 }
 async function loadLaws(force){
   if(LAWS&&!force&&Date.now()-LAWT<60000)return LAWS;
-  const d=await db.collection('laws').doc('main').get();
-  LAWTEXT=d.exists?String(d.data().text||''):'';LAWS=parseLaws(LAWTEXT);LAWT=Date.now();return LAWS;
+  let txt='';
+  try{const r=await fetch('laws.txt?v='+Math.floor(Date.now()/60000),{cache:'no-store'});if(r.ok){const t=await r.text();if(t.trim()&&!/^\s*<(!doctype|html)/i.test(t))txt=t}}catch{}
+  if(!txt)txt=LAWS_TEXT;   // built-in copy, used if laws.txt is missing
+  LAWTEXT=txt;LAWS=parseLaws(txt);LAWT=Date.now();return LAWS;
 }
 function lawAnswer(question,laws){
   const t=question.toLowerCase();
   if(!laws.length)return{html:'<p style="margin:0">No laws have been added yet. Ask a staff member on Discord.</p>'};
   if(/\b(list|all|every|show)\b.*\blaws?\b|\bwhat laws\b|\bwhich laws\b/.test(t))
-    return{html:'<p style="margin:0 0 .4em"><b>Laws I know about:</b></p><ul style="margin:0;padding-left:1.1em">'+laws.slice(0,25).map(l=>`<li>${esc(l.text.slice(0,110))}</li>`).join('')+'</ul>'+(laws.length>25?`<p class="mu" style="margin:.4em 0 0">…and ${laws.length-25} more. Ask about a specific thing.</p>`:'')};
+    return{html:'<p style="margin:0 0 .4em"><b>Laws I know about:</b></p><ul style="margin:0;padding-left:1.1em">'+(laws.some(l=>l.title)?laws.filter(l=>l.title):laws).slice(0,40).map(l=>`<li>${esc(l.title||l.text.slice(0,110))}${l.title&&l.head?` <span class="mu">(${esc(l.head.slice(0,50))})</span>`:''}</li>`).join('')+'</ul>'+(laws.length>40?`<p class="mu" style="margin:.4em 0 0">…and ${laws.length-40} more. Ask about a specific thing.</p>`:'')};
   const q=[...new Set(ltok(question))];if(!q.length)return{html:'<p style="margin:0">Ask me about an action, like <i>"Is speeding illegal?"</i> or <i>"Can I carry a weapon?"</i></p>'};
-  const need=Math.max(1,Math.ceil(q.length*.5));
-  const ranked=laws.map(l=>{const set=new Set(ltok(l.head+' '+l.text));let s=0;q.forEach(w=>{if(set.has(w))s++});return{l,s}}).filter(x=>x.s>=need).sort((a,b)=>b.s-a.s);
+  const SYN={police:['officer','official'],cop:['officer','official'],cops:['officer','official'],theft:['steal'],robbery:['steal','property'],rob:['steal','property'],robbing:['steal','property'],stealing:['steal'],lawyer:['hearing','trial'],court:['judicial','hearing'],jail:['arrest','detain'],arrested:['arrest','detain'],ticket:['penalty','punishment'],mayor:['executive','official'],vote:['legislative'],protest:['expression','criticize']};
+  SYN.cops=SYN.cop;q.slice().forEach(w=>(SYN[w]||[]).forEach(x=>{const y=lstem(x);if(!q.includes(y))q.push(y)}));
+  const base=Math.min(q.length,ltok(question).length),need=base<=3?1:Math.ceil(base*.4);
+  const ranked=laws.map(l=>{const set=new Set(ltok(l.head+' '+l.title+' '+l.text)),ts=new Set(ltok(l.title));let s=0;q.forEach(w=>{if(set.has(w))s++;if(ts.has(w))s+=2});return{l,s}}).filter(x=>x.s>=need).sort((a,b)=>b.s-a.s);
   if(!ranked.length)return{html:'<p style="margin:0">I could not find a law that covers that. Try different words, type <b>list laws</b>, or ask a staff member on Discord.</p>'};
-  const hits=ranked.filter(x=>x.s>=ranked[0].s).slice(0,3);
-  return{html:hits.map(({l})=>{const v=LVERD[lawVerdict(l.head+' '+l.text)];
-    return `<div style="border-left:3px solid ${v.c};padding:.1em 0 .1em .7em;margin:0 0 .8em"><div style="font-weight:700">${v.i} ${esc(v.t)}</div>${l.head?`<div class="mu" style="font-size:.85em">${esc(l.head)}</div>`:''}<div style="margin:.3em 0">${esc(l.text.slice(0,400))}</div></div>`}).join('')+'<p class="mu" style="margin:0;font-size:.8em">This is only a guide based on the laws staff have written down. Staff and police make the final call.</p>'};
+  const hits=ranked.filter(x=>x.s>=ranked[0].s-.5).slice(0,3);
+  return{html:hits.map(({l})=>{const v=LVERD[l.title?'info':lawVerdict(l.head+' '+l.text)];
+    return `<div style="border-left:3px solid ${v.c};padding:.1em 0 .1em .7em;margin:0 0 .8em"><div style="font-weight:700">${v.i} ${esc(v.t)}</div>${l.head?`<div class="mu" style="font-size:.85em">${esc(l.head)}</div>`:''}${l.title?`<div style="font-weight:600;margin-top:.2em">${esc(l.title)}</div>`:''}<div style="margin:.3em 0">${esc(l.text.slice(0,500))}</div></div>`}).join('')+'<p class="mu" style="margin:0;font-size:.8em">This is only a guide based on the laws staff have written down. Staff and police make the final call.</p>'};
 }
 function initLawBot(){
   if(document.getElementById('lawbot')||BANNED)return;
@@ -1361,18 +1527,6 @@ function initLawBot(){
   btn.onclick=()=>toggle(!box.classList.contains('open'));w.querySelector('#lawx').onclick=()=>toggle(false);
   w.querySelector('#lawform').onsubmit=e=>{e.preventDefault();ask(inp.value)};
   addEventListener('keydown',e=>{if(e.key==='Escape'&&box.classList.contains('open'))toggle(false)});
-}
-
-// ---------- staff: Laws tab (one big text box) ----------
-function lawsPanel(text,meta){
-  return `<div class="panel"><h3>Laws (for the Law Bot)</h3><p class="sub">Copy and paste all of your laws here, in any format. The Law Bot (bottom-left of the site) reads this text and answers civilians. Tips: put <b>one law per line</b>, and say clearly if something is <i>illegal</i>, <i>allowed</i> or needs a <i>permit</i>. A line ending in a colon, like <i>Traffic laws:</i>, works as a heading. Uses the staff PIN at the top right.</p>
-    <textarea id="lw_text" rows="18" maxlength="20000" style="width:100%;min-height:300px;font-family:inherit" placeholder="Traffic laws:&#10;Speeding more than 20 over the limit is illegal. Fine of 500 SB.&#10;Driving without an active license is not allowed.&#10;&#10;Weapons:&#10;Carrying a weapon is allowed only with a weapons permit.">${esc(text||'')}</textarea>
-    <p><button class="btn" onclick="saveLaws()">Save laws</button> <span class="mu">${meta&&meta.updated?'Last saved '+esc(new Date(meta.updated).toLocaleString())+(meta.by_name?' by '+esc(meta.by_name):''):'Nothing saved yet.'}</span></p></div>`;
-}
-async function saveLaws(){
-  const text=($('#lw_text').value||'').slice(0,20000);
-  try{await staffWrite('n_main',b=>b.set(db.collection('laws').doc('main'),{text,by_name:S.user.name.slice(0,80),updated:Date.now()}));
-    LAWS=null;say('Laws saved. The Law Bot knows them now.');mod()}catch(e){say(e.message||fe(e))}
 }
 
 // staff review links in Staff mode open the normal Chain Servers page (Staff mode only has Console + Terms)
