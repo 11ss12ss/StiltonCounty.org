@@ -1,12 +1,12 @@
 // ===== CONFIG =====
-const CFG={DISCORD_CLIENT_ID:'1542247332899455006',GUILD_ID:'1462548365907722252',POLICE_ROLE_ID:'1554679644102332506',STAFF_ROLE_ID:'1554679627342159922',JOIN_URL:''}; // JOIN_URL = your main Discord invite link (optional)
+const CFG={DISCORD_CLIENT_ID:'1542247332899455006',GUILD_ID:'1462548365907722252',POLICE_ROLE_ID:'1554679644102332506',STAFF_ROLE_ID:'1554679627342159922',JOIN_URL:'',EMERGENCY_ROLE_IDS:[],JUDGE_ROLE_IDS:[],EMS_ROLE_IDS:[]}; // EMERGENCY_ROLE_IDS = extra Discord role IDs (EMT, Fire, Dispatch...) that may use Emergency Response mode; POLICE_ROLE_ID is always allowed. JUDGE_ROLE_IDS = roles that may approve or deny warrant requests (staff always can). EMS_ROLE_IDS = confirmed EMS role(s): they can use Emergency Response mode. JOIN_URL = your main Discord invite link (optional)
 // Firebase web config (public by design; access is controlled by Firestore rules)
 firebase.initializeApp({apiKey:"AIzaSyAtjPX7727zNlvBh85jzTeAqPs5LfvuYr0",authDomain:"rossite.firebaseapp.com",projectId:"rossite",storageBucket:"rossite.firebasestorage.app",messagingSenderId:"812413188846",appId:"1:812413188846:web:a3e3d7e65697ff290c91ff"});
 const db=firebase.firestore();
 // ==================
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),
 safeId=s=>/^[A-Za-z0-9_-]+$/.test(String(s??''))?String(s):'';
-let S={user:null,staff:false},tab='home',draft={};
+let S={user:null,staff:false,ers:false,police:false},tab='home',draft={},MODE='std';
 const LOADER=n=>`<div class="loader"><span class="spin"></span><span>Loading…</span></div>`+(n?`<div class="cgrid">${'<div class="skel"></div>'.repeat(n)}</div>`:'');
 const say=t=>{const m=$('#msg');m.textContent=t;m.classList.toggle('hide',!t)};
 const fe=e=>e&&e.code==='permission-denied'?'Firestore blocked this. Paste the rules into Firebase Console > Firestore > Rules and press Publish.':(e&&e.message)||'Database error';
@@ -85,8 +85,13 @@ async function init(){
       S.user={id:u.id,name:m.nick||u.global_name||u.username,avatar:u.avatar?`https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png`:null};
       S.staff=r.includes(CFG.STAFF_ROLE_ID);
       if(!S.staff){try{S.staff=(await db.collection('admins').doc(u.id).get()).exists}catch{}} // admins added from the Staff tab
+      S.police=r.includes(CFG.POLICE_ROLE_ID);
+      S.judge=(CFG.JUDGE_ROLE_IDS||[]).some(x=>r.includes(x));
+      S.ems=(CFG.EMS_ROLE_IDS||[]).some(x=>r.includes(x));
+      S.ers=S.staff||S.police||S.judge||S.ems||(CFG.EMERGENCY_ROLE_IDS||[]).some(x=>r.includes(x));
+      try{const mm=localStorage.getItem('ros_mode');MODE=(mm==='staff'&&S.staff)||(mm==='er'&&S.ers)?mm:'std'}catch{}
       draft=JSON.parse(localStorage.getItem('rp_draft_'+u.id)||'{}');
-      tab=['bank','tickets'].includes(draft.tab)?'portal':['home','chains','portal','terms','mod'].includes(draft.tab)?draft.tab:tab;
+      tab=['bank','tickets'].includes(draft.tab)?'portal':['home','chains','portal','terms','mod','er'].includes(draft.tab)?draft.tab:tab;
       db.collection('devices').doc(u.id).set({ids:firebase.firestore.FieldValue.arrayUnion('v:'+DEV.v,'f:'+DEV.f),name:S.user.name.slice(0,80),updated:Date.now()},{merge:true}).catch(()=>{}); // lets staff ban this person's devices too
     }catch(e){localStorage.removeItem('rp_tok');S.user=null;S.staff=false;LOGIN_MSG='Could not confirm your Discord server membership'+(e&&/^\d+$/.test(e.message)?' (Discord error '+e.message+')':'')+'. You must be a member of our Discord server to log in.'}}
   SITE=await siteP;
@@ -97,7 +102,8 @@ async function init(){
   watchBan(u&&u.id);
   watchSite();
   startPresence();
-  setTimeout(()=>{try{if(!BANNED&&!DOWN&&!localStorage.getItem('ros_seen'))startIntro()}catch{}},500);
+  try{resumeDuty()}catch{}
+  setTimeout(()=>{try{if(!BANNED&&!DOWN&&isCivilian()&&!tutSeen())startIntro()}catch{}},500);
 }
 // ===== site shutdown (staff kill switch) =====
 function showDown(){
@@ -165,15 +171,21 @@ function watchBan(uid){
   db.collection('bans').where('devices','array-contains-any',ids).onSnapshot(s=>{if(first.b){first.b=false;return}if(!s.empty)hit()},()=>{});
 }
 function render(){
-  const tabs=[['home','Home'],['chains','Chain Servers']];
-  if(S.user)tabs.push(['portal','Portal']);
-  tabs.push(['terms','Terms']);
-  if(S.staff)tabs.push(['mod','Staff']);
-  if(!tabs.some(x=>x[0]==tab))tab='home';
+  if(!modesFor().includes(MODE))MODE='std';
+  let tabs;
+  if(MODE==='staff')tabs=[['mod','Console'],['terms','Terms']];
+  else if(MODE==='er')tabs=[['er','Dispatch'],['terms','Terms']];
+  else if(S.user&&!S.staff)tabs=[['portal','Portal'],['chains','Chain Servers'],['terms','Terms']];   // no Home screen for logged-in civilians
+  else{tabs=[['home','Home'],['chains','Chain Servers']];if(S.user)tabs.push(['portal','Portal']);tabs.push(['terms','Terms'])}
+  if(!tabs.some(x=>x[0]==tab))tab=tabs[0][0];
   $('#nav').innerHTML=tabs.map(([k,l])=>`<button data-k="${k}" class="${k==tab?'on':''}" onclick="go('${k}')">${l}</button>`).join('');
-  $('#who').innerHTML=S.user?`<span class="user">${S.user.avatar?`<img src="${esc(S.user.avatar)}">`:''}${esc(S.user.name)}${S.staff?'<span class="badge">Staff</span>':''} <button class="btn s" onclick="logout()">Log out</button></span>`:`<a class="btn" href="${loginUrl()}">Log in with Discord</a>`;
-  document.body.classList.toggle('wide',tab==='mod');
-  ({home,chains,portal,terms,mod})[tab]();
+  $('#who').innerHTML=S.user?`${modeBtn()}<span class="user">${S.user.avatar?`<img src="${esc(S.user.avatar)}">`:''}${esc(S.user.name)}${S.staff?'<span class="badge">Staff</span>':''} <button class="btn s" onclick="logout()">Log out</button></span>`:`<a class="btn" href="${loginUrl()}">Log in with Discord</a>`;
+  document.body.classList.toggle('wide',tab==='mod'||tab==='er');
+  document.body.classList.toggle('m-staff',MODE==='staff');document.body.classList.toggle('m-er',MODE==='er');
+  const ft=document.querySelector('footer'),fa=document.getElementById('foottut');
+  if(ft&&isCivilian()){if(!fa){const a=document.createElement('a');a.id='foottut';a.href='#';a.textContent='Replay the tutorial';a.style.cssText='display:inline-block;margin:8px 0 0 14px;font-size:.85rem';a.onclick=e=>{e.preventDefault();startTour()};const t=ft.querySelector('a');t?t.insertAdjacentElement('afterend',a):ft.appendChild(a)}}
+  else if(fa)fa.remove();
+  ({home,chains,portal,terms,mod,er})[tab]();
   if(S.user)ticketBadge();
 }
 const go=k=>{if(BANNED||DOWN)return;tab=k;draft.tab=k;say('');render()};
@@ -190,7 +202,7 @@ function terms(){
 function home(){
   $('#view').innerHTML=`<div class="card hero"><div class="kick">|+-+| Republic Of Stilton |+-+|</div><h2>Republic of Stilton</h2>
    <p class="mu">Est Jan 2026 &bull; “United in governance, Freedom in communities”</p>
-   <p><button class="btn" onclick="go('chains')">Explore Chain Servers</button> <button class="btn s" onclick="startTour()">Take a tour</button> ${safeUrl(CFG.JOIN_URL)?`<a class="btn s" href="${esc(safeUrl(CFG.JOIN_URL))}" target="_blank" rel="noopener noreferrer">Join the Discord</a>`:''}</p></div>
+   <p><button class="btn" onclick="go('chains')">Explore Chain Servers</button> ${!S.user||isCivilian()?'<button class="btn s" onclick="startTour()">Take the tutorial</button>':''} ${safeUrl(CFG.JOIN_URL)?`<a class="btn s" href="${esc(safeUrl(CFG.JOIN_URL))}" target="_blank" rel="noopener noreferrer">Join the Discord</a>`:''}</p></div>
 
    <div class="card sec"><h3>What ROS Is.</h3>
     <p>The Republic of Stilton (ROS) is, at its core, is a roleplay server where you get to choose your path. In ROS there are many paths you can take such as:</p>
@@ -328,7 +340,7 @@ async function mod(){
       <div class="kpi"><div class="lbl">Online now</div><div class="big" id="t_online">…</div><div class="mu">logged in right now</div></div>
       <div class="kpi"><div class="lbl">SB in circulation</div><div class="big" id="t_econ">…</div><div class="mu" id="t_econ_s">counting…</div></div>
       <div class="kpi click" onclick="dashTab('bans')"><div class="lbl">Banned</div><div class="big">${list.length}</div><div class="mu">people banned</div></div>
-      <div class="kpi click" onclick="go('chains')"><div class="lbl">Chain applications</div><div class="big">${pend}</div><div class="mu">waiting for review</div></div>
+      <div class="kpi click" onclick="openChains()"><div class="lbl">Chain applications</div><div class="big">${pend}</div><div class="mu">waiting for review</div></div>
       <div class="kpi click" onclick="dashTab('reg')"><div class="lbl">Vehicle registrations</div><div class="big">${regPend}</div><div class="mu">waiting for review</div></div></div>
     <div class="cols">
       <div class="panel"><div class="hl"><h3>Recent activity</h3><span class="mu" style="font-size:.85em">Refreshes every 30 seconds</span></div><p class="sub">Bank activity and bans, newest first.</p><div id="pulse"><div class="loader"><span class="spin"></span><span>Loading…</span></div></div></div>
@@ -341,7 +353,7 @@ async function mod(){
         <button onclick="dashTab('reg')">Review vehicle registrations</button>
         <button onclick="dashTab('lic')">Turn a license on or off</button>
         <button onclick="dashTab('tix')">Issue a ticket</button>
-        <button onclick="go('chains')">Review chain applications</button></div></div></div>
+        <button onclick="openChains()">Review chain applications</button></div></div></div>
     <div class="panel" id="online" style="margin-top:1.2em"><h3>Online now</h3><div class="loader"><span class="spin"></span><span>Loading…</span></div></div>`;
   else if(DT==='look')body=`<div class="panel"><h3>Look up a user</h3><p class="sub">See whether someone is banned, when they were last online, how many devices are on record and their recent bank activity.</p>
     <div class="row"><div><label>Discord user ID</label><input id="lk_id" inputmode="numeric" placeholder="e.g. 123456789012345678" onkeydown="if(event.key==='Enter')lookupUser()"></div><div><label>&nbsp;</label><button class="btn" onclick="lookupUser()">Look up</button></div></div></div><div id="lk_out"></div>`;
@@ -616,73 +628,113 @@ addEventListener('pagehide',save);document.addEventListener('visibilitychange',(
   new MutationObserver(reveal).observe(document.getElementById('view'),{childList:true});
 })();
 
-// ===== first-visit welcome + guided tour =====
+// ===== first-visit tutorial: civilians only, offered once, completely optional =====
+// Police, EMS, other emergency responders and staff never get the tutorial. Logged-out visitors can start it from the Home screen.
+const isCivilian=()=>!!S.user&&!S.staff&&!S.ers;
 (function(){
   const st=document.createElement('style');
   st.textContent=`
   .ov{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(3,8,20,.82);animation:ovIn .3s ease both}
-  .ov .card{max-width:520px;width:100%;margin:0;box-shadow:0 20px 60px rgba(0,0,0,.6);animation:ovUp .35s ease both}
+  .ov .card{max-width:540px;width:100%;margin:0;box-shadow:0 20px 60px rgba(0,0,0,.6);animation:ovUp .35s ease both}
   .ov ul{margin:10px 0 16px;padding-left:20px}.ov li{margin:6px 0}
-  .ov .acts{display:flex;gap:10px;flex-wrap:wrap}
+  .ov .oacts{display:flex;gap:10px;flex-wrap:wrap}
   .th{position:fixed;z-index:1001;border-radius:10px;pointer-events:none;box-shadow:0 0 0 9999px rgba(3,8,20,.8),0 0 0 2px var(--blue),0 0 24px rgba(47,91,209,.7);transition:all .3s ease}
-  .tt{position:fixed;z-index:1002;width:min(340px,calc(100vw - 24px));background:var(--panel);border:1px solid var(--bd);border-top:3px solid var(--red);border-radius:12px;padding:16px;box-shadow:0 14px 40px rgba(0,0,0,.6);animation:ovUp .3s ease both}
-  .tt h3{margin:0 0 6px}.tt p{margin:0 0 12px}.tt .acts{display:flex;gap:8px;align-items:center}.tt .acts .sp{flex:1}.tt .cnt{color:var(--mu);font-size:.8rem}
+  .tt{position:fixed;z-index:1002;width:min(360px,calc(100vw - 24px));background:var(--panel);border:1px solid var(--bd);border-top:3px solid var(--red);border-radius:12px;padding:16px;box-shadow:0 14px 40px rgba(0,0,0,.6);animation:ovUp .3s ease both}
+  .tt h3{margin:0 0 6px}.tt p{margin:0 0 12px;line-height:1.5}.tt .tacts{display:flex;gap:8px;align-items:center}.tt .tacts .sp{flex:1}.tt .cnt{color:var(--mu);font-size:.8rem}
+  .tt .ch{color:var(--mu);font-size:.68rem;font-weight:700;letter-spacing:.16em;text-transform:uppercase;margin-bottom:6px}
+  .tt .tbar{height:3px;background:var(--bd);border-radius:3px;margin:0 0 12px;overflow:hidden}.tt .tbar i{display:block;height:100%;background:var(--red);transition:width .3s}
   .tclick{position:fixed;inset:0;z-index:1000}
   @keyframes ovIn{from{opacity:0}to{opacity:1}}@keyframes ovUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
   @media (prefers-reduced-motion:reduce){.ov,.ov .card,.tt{animation:none}.th{transition:none}}`;
   document.head.appendChild(st);
-  const mark=()=>{try{localStorage.setItem('ros_seen','1')}catch{}};
-  let ov=null,hl=null,tip=null,steps=[],i=0,onKey=null,onRs=null;
-  const clean=()=>{[ov,hl,tip].forEach(e=>e&&e.remove());ov=hl=tip=null;if(onKey)removeEventListener('keydown',onKey);if(onRs)removeEventListener('resize',onRs);onKey=onRs=null};
+
+  window.tutSeen=()=>{try{return !!localStorage.getItem(S.user?'ros_tut_'+S.user.id:'ros_seen')}catch{return true}};
+  const mark=()=>{try{localStorage.setItem('ros_seen','1');if(S.user)localStorage.setItem('ros_tut_'+S.user.id,'1')}catch{}};
+
+  let ov=null,hl=null,tip=null,steps=[],i=0,onKey=null,onRs=null,busy=false,run=0,curEl=null;
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+  async function waitFor(fn,ms){const t0=Date.now();while(Date.now()-t0<ms){try{const r=fn();if(r)return r}catch{}await sleep(80)}return null}
+  const clean=()=>{[ov,hl,tip].forEach(e=>e&&e.remove());ov=hl=tip=null;curEl=null;if(onKey)removeEventListener('keydown',onKey);if(onRs)removeEventListener('resize',onRs);onKey=onRs=null;run++};
+
+  // ---- the one-time offer (logged-in civilians only). Any answer, yes or no, means they are never asked again. ----
   window.startIntro=function(){
+    if(!isCivilian())return;
+    mark();   // asked once, ever: recorded as soon as the offer is shown, whatever they answer
     clean();ov=document.createElement('div');ov.className='ov';
     ov.innerHTML=`<div class="card" role="dialog" aria-modal="true" aria-label="Welcome"><div class="kick">|+-+| Republic Of Stilton |+-+|</div><h2>Welcome to the Republic of Stilton</h2>
-      <p class="mu">Looks like it's your first time here. This site is the hub for the whole Republic.</p>
-      <ul><li>Learn what ROS is and how it works</li><li>Browse every chain server (city) in one place</li><li>Log in with Discord to use your Portal: the bank, income every 3 hours, a company account, your driver license, vehicle registration and tickets</li><li>Apply to list your own chain server</li></ul>
-      <div class="acts"><button class="btn" id="i_go">Take the quick tour</button><button class="btn s" id="i_skip">Skip</button></div></div>`;
+      <p class="mu">Looks like it's your first time here. Would you like a quick tutorial (about 2 minutes)? It is completely optional, and you will not be asked again. It covers:</p>
+      <ul><li>Your <b>Portal</b>: bank, driver license, vehicle registration and emergency calls</li><li>Chain servers and the rules</li></ul>
+      <div class="oacts"><button class="btn" id="i_go">Yes, show me</button><button class="btn s" id="i_skip">No thanks</button></div></div>`;
     document.body.appendChild(ov);
     const done=()=>{mark();clean()};
-    ov.querySelector('#i_go').onclick=()=>{mark();clean();startTour()};
+    ov.querySelector('#i_go').onclick=()=>{clean();startTour()};
     ov.querySelector('#i_skip').onclick=done;
     ov.addEventListener('click',e=>{if(e.target===ov)done()});
     onKey=e=>{if(e.key==='Escape')done()};addEventListener('keydown',onKey);
     ov.querySelector('#i_go').focus();
   };
-  const build=()=>{const s=[
-    {k:'home',sel:'#nav [data-k=home]',t:'Home',d:'Start here. It explains what the Republic of Stilton is: roleplay, government, the economy and how chain servers fit in.'},
-    {k:'chains',sel:'#nav [data-k=chains]',t:'Chain Servers',d:'Every city in the Republic. Open ones show a Join button. If you run a city, log in and apply here, and staff will review it.'},
-    {k:'terms',sel:'#nav [data-k=terms]',t:'Terms of Service',d:'The rules for everyone in the community, including international members. Worth a read before you join in.'},
-    ...(S.user?[{k:'portal',sel:'#nav [data-k=portal]',t:'Portal',d:'Your citizen dashboard: bank, driver license status, vehicle registration and any tickets issued to you.'}]:[]),
-    {k:null,sel:'#who',t:S.user?'Your account':'Log in',d:S.user?'This is you. Your Discord name shows here, and you can log out any time.':'Log in with Discord to prove you are in our server. You need this to apply for a chain server.'}];
-    if(S.staff)s.push({k:'mod',sel:'#nav [data-k=mod]',t:'Staff',d:'Staff only. See the site at a glance, manage the bank, ban or unban people and shut the site down. Chain applications are reviewed on the Chain Servers tab.'});
-    return s};
+
+  const PT='#view .pt .panel';
+  function build(){
+    const s=[];
+    s.push({ch:'Welcome',t:'Welcome to the Republic of Stilton!',d:'This tutorial walks you through the site and what each part does. Press Next to continue, or the × to leave at any time.',pre:()=>go('home')});
+    if(!S.user)s.push({ch:'The basics',sel:'#nav [data-k=home]',t:'Home',d:'Start here. It explains what the Republic of Stilton is: roleplay, government, the economy and how chain servers fit in.',pre:()=>go('home')});
+    s.push({ch:'The basics',sel:'#nav [data-k=chains]',t:'Chain Servers',d:'Every city in the Republic. Open cities show a Join button. If you run your own city, you can apply to list it here and staff will review it.',pre:()=>go('chains')});
+    s.push({ch:'The basics',sel:'#nav [data-k=terms]',t:'Terms of Service',d:'The rules for everyone in the community. Worth a read before you jump in.',pre:()=>go('terms')});
+    if(!S.user){
+      s.push({ch:'Your account',sel:'#who',t:'Log in with Discord',d:'Log in to unlock your Portal: your bank, driver license, vehicle registration and emergency calls. You need to be a member of our Discord server.',pre:()=>go('home')});
+    }else{
+      s.push({ch:'Your Portal',sel:'#nav [data-k=portal]',t:'Portal',d:'Your citizen hub. Everything about your character lives here: money, driver license, vehicles and emergency calls.',pre:()=>go('portal')});
+      s.push({ch:'Your Portal',sel:'#view .pt .st-tabs',t:'Portal sections',d:'These tabs move between sections. A number or ! next to a tab means something needs you, like an unpaid ticket or an active emergency call. A Tickets tab appears whenever you have a ticket from staff or police.',pre:()=>ptTab('over')});
+      s.push({ch:'Your Portal',sel:'#view .pt .kpis',t:'Overview',d:'Your license status, bank total, registered vehicles and unpaid tickets at a glance. Click any box to jump to that section.',pre:()=>ptTab('over')});
+      s.push({ch:'Your Portal',sel:'#pbody .card',t:'Bank',d:'StiltonBux (SB) is the money of the Republic. Open your account first, then deposit cash, withdraw, send money to other people by account ID and collect free income every 3 hours. You can also open one company account for a business.',pre:()=>ptTab('bank')});
+      s.push({ch:'Your Portal',sel:PT,t:'Driver license',d:'Your license is Active by default, which means you can drive. If staff turn it off, it shows Inactive here and you must not drive until it is turned back on.',pre:()=>ptTab('lic')});
+      s.push({ch:'Your Portal',sel:PT,t:'Vehicle registration',d:'Register your cars, SUVs, trucks, vans and buses here. Staff review every new registration, and you will see Pending, Approved or Denied (with a reason). Motorcycles are not allowed.',pre:()=>ptTab('veh')});
+      s.push({ch:'Your Portal',sel:PT,t:'Emergency services (911)',d:'Need help in the roleplay? Choose police, EMS or fire, say where you are and what is happening, and send it. Dispatch sees it straight away and you can watch which units are responding. Only use it for real emergencies: misuse can get you banned.',pre:()=>ptTab('sos')});
+    }
+    s.push({ch:'Done',t:'You\'re all set!',d:S.user?'That is everything. If you ever want to see this again, use the "Replay the tutorial" link at the bottom of the page.':'That is everything. Log in with Discord to get started.'});
+    return s;
+  }
+
   function place(){
-    const s=steps[i],el=document.querySelector(s.sel);if(!el)return;
-    el.scrollIntoView({block:'nearest',inline:'nearest'});
+    if(!tip||!hl)return;
+    const el=curEl,w=tip.offsetWidth,h=tip.offsetHeight;
+    if(!el||!document.contains(el)){
+      Object.assign(hl.style,{left:'50%',top:'50%',width:'0px',height:'0px'});
+      Object.assign(tip.style,{top:Math.max(8,(innerHeight-h)/2)+'px',left:Math.max(12,(innerWidth-w)/2)+'px'});return}
     const r=el.getBoundingClientRect(),p=6;
     Object.assign(hl.style,{left:r.left-p+'px',top:r.top-p+'px',width:r.width+2*p+'px',height:r.height+2*p+'px'});
-    const w=tip.offsetWidth,h=tip.offsetHeight;
-    let top=r.bottom+p+12;if(top+h>innerHeight-8)top=Math.max(8,r.top-p-12-h);
-    let left=Math.min(Math.max(12,r.left),innerWidth-w-12);
-    Object.assign(tip.style,{top:top+'px',left:left+'px'});
+    let top=r.bottom+p+12;
+    if(r.height>innerHeight*.55)top=innerHeight-h-12;
+    else if(top+h>innerHeight-8){top=r.top-p-12-h;if(top<8)top=innerHeight-h-12}
+    const left=Math.min(Math.max(12,r.left),innerWidth-w-12);
+    Object.assign(tip.style,{top:Math.max(8,top)+'px',left:left+'px'});
   }
-  function show(){
-    const s=steps[i];if(s.k&&typeof go==='function'){go(s.k);}
-    setTimeout(()=>{
-      tip.innerHTML=`<h3>${esc(s.t)}</h3><p class="mu">${esc(s.d)}</p><div class="acts"><span class="cnt">${i+1} / ${steps.length}</span><span class="sp"></span>${i?'<button class="btn s" id="t_b">Back</button>':''}<button class="btn" id="t_n">${i==steps.length-1?'Done':'Next'}</button><button class="btn s" id="t_x" aria-label="Close tour">&times;</button></div>`;
-      tip.querySelector('#t_n').onclick=()=>{i==steps.length-1?end():(i++,show())};
-      const b=tip.querySelector('#t_b');if(b)b.onclick=()=>{i--;show()};
-      tip.querySelector('#t_x').onclick=end;
-      place();
-    },60);
+  function draw(s,el){
+    curEl=el;
+    tip.innerHTML=`<div class="ch">${esc(s.ch||'')}</div><div class="tbar"><i style="width:${Math.round((i+1)/steps.length*100)}%"></i></div><h3>${esc(s.t)}</h3><p class="mu">${esc(s.d)}</p><div class="tacts"><span class="cnt">${i+1} / ${steps.length}</span><span class="sp"></span>${i?'<button class="btn s" id="t_b">Back</button>':''}<button class="btn" id="t_n">${i==steps.length-1?'Finish':'Next'}</button><button class="btn s" id="t_x" aria-label="Close tutorial">&times;</button></div>`;
+    tip.querySelector('#t_n').onclick=()=>{if(busy)return;i==steps.length-1?end():(i++,show())};
+    const b=tip.querySelector('#t_b');if(b)b.onclick=()=>{if(busy)return;i--;show()};
+    tip.querySelector('#t_x').onclick=()=>end();
+    if(el)el.scrollIntoView({block:'center',inline:'nearest'});
+    place();setTimeout(place,120);
   }
-  function end(){clean();go('home');scrollTo(0,0)}
+  async function show(){
+    const my=++run;busy=true;
+    const s=steps[i],v=document.getElementById('view'),mk=v.firstElementChild;
+    if(s.pre){try{await s.pre()}catch{}await waitFor(()=>v.firstElementChild!==mk,2500)}
+    const el=s.sel?await waitFor(()=>document.querySelector(s.sel),3500):null;
+    if(my!==run||!tip)return;
+    busy=false;draw(s,el);
+  }
+  function end(){mark();clean();go('home');scrollTo(0,0)}
   window.startTour=function(){
-    if(BANNED||DOWN)return;clean();mark();steps=build();i=0;
+    if(BANNED||DOWN||(S.user&&!isCivilian()))return;
+    clean();mark();steps=build();i=0;
     ov=document.createElement('div');ov.className='tclick';document.body.appendChild(ov);
     hl=document.createElement('div');hl.className='th';document.body.appendChild(hl);
     tip=document.createElement('div');tip.className='tt';tip.setAttribute('role','dialog');document.body.appendChild(tip);
-    onKey=e=>{if(e.key==='Escape')end();else if(e.key==='ArrowRight'&&i<steps.length-1){i++;show()}else if(e.key==='ArrowLeft'&&i>0){i--;show()}};addEventListener('keydown',onKey);
+    onKey=e=>{if(e.key==='Escape')end();else if(!busy&&e.key==='ArrowRight'&&i<steps.length-1){i++;show()}else if(!busy&&e.key==='ArrowLeft'&&i>0){i--;show()}};addEventListener('keydown',onKey);
     onRs=()=>place();addEventListener('resize',onRs);
     show();
   };
@@ -724,21 +776,23 @@ async function portal(){
   if(!S.user)return needLogin();
   clearInterval(window.__incT);
   const id=S.user.id;
+  clearTimeout(window.__sosT);
   $('#view').innerHTML=`<div class="st pt">${LOADER(1)}</div>`;
   try{await authed()}catch(e){say(e.message||fe(e));return}
   let perm=false;
   const sf=p=>Promise.resolve(p).catch(e=>{if(e&&e.code==='permission-denied')perm=true;return null});
-  const [l,v,t,a]=await Promise.all([
+  const [l,v,t,a,em]=await Promise.all([
     sf(db.collection('licenses').doc(id).get()),
     sf(db.collection('vehicles').where('ownerId','==',id).get()),
     sf(db.collection('tickets').where('to','==',id).get()),
-    sf(db.collection('accounts').doc(id).get())]);
-  const lic=l&&l.exists?l.data():null,on=!!lic&&lic.status==='active';
+    sf(db.collection('accounts').doc(id).get()),sf(db.collection('emergency').doc(firebase.auth().currentUser.uid).get())]);
+  const lic=l&&l.exists?l.data():null,on=!lic||lic.status!=='inactive';   // active unless staff turn it off
   PCARS=v?v.docs.map(d=>({id:d.id,...d.data()})).sort((x,y)=>(y.created||0)-(x.created||0)):[];
   const tix=t?t.docs.map(d=>d.data()):[],open=tix.filter(x=>x.status==='unpaid');
   const acct=a&&a.exists?a.data():null,hasAcct=!!acct&&acct.owner!=='';
   const total=acct?(acct.cash||0)+(acct.bank||0):0;
-  const tabs=[['over','Overview'],['bank','Bank'],['lic','License'],['veh','Vehicles',PCARS.length||'']];
+  const sos=em&&em.exists?em.data():null,sosOn=!!sos&&['Pending','En route','On scene'].includes(sos.status);
+  const tabs=[['over','Overview'],['bank','Bank'],['lic','License'],['veh','Vehicles',PCARS.length||''],['sos','Emergency',sosOn?'!':'']];
   if(tix.length)tabs.push(['tix','Tickets',open.length||'']);
   if(!tabs.some(x=>x[0]===PT_TAB))PT_TAB='over';
   const head=`<div class="st-head"><div class="st-title"><h2>Citizen Portal</h2><span>${esc(S.user.name)}</span></div>
@@ -753,6 +807,7 @@ async function portal(){
       <div class="kpi click" onclick="ptTab('bank')"><div class="lbl">Bank total</div><div class="big">${hasAcct||acct?esc(SB(total)):'—'}</div><div class="mu">${acct?'cash + bank':'no account yet'}</div></div>
       <div class="kpi click" onclick="ptTab('veh')"><div class="lbl">Vehicles</div><div class="big">${PCARS.length}</div><div class="mu">${PCARS.filter(c=>vst(c)==='pending').length?PCARS.filter(c=>vst(c)==='pending').length+' awaiting review':'registered to you'}</div></div>
       <div class="kpi ${tix.length?'click':''}" ${tix.length?`onclick="ptTab('tix')"`:''}><div class="lbl">Unpaid tickets</div><div class="big ${open.length?'badc':''}">${open.length}</div><div class="mu">${open.length?esc(SB(open.reduce((s,x)=>s+(Number(x.amount)||0),0)))+' owed':'all clear'}</div></div></div>
+      ${sosOn?`<div class="panel alert"><h3>Your emergency request is active</h3><p class="sub">Status: ${esc(sos.status)}.</p><button class="btn" onclick="ptTab('sos')">View request</button></div>`:''}
       ${open.length?`<div class="panel alert"><h3>You have ${open.length} unpaid ticket${open.length>1?'s':''}</h3><p class="sub">Pay them from your bank balance.</p><button class="btn" onclick="ptTab('tix')">View tickets</button></div>`:''}
       ${!on?`<div class="panel alert"><h3>Your license is inactive</h3><p class="sub" style="margin:0">You should not drive until staff activate your license.</p></div>`:''}
       <div class="cols"><div class="panel"><h3>Your vehicles</h3><p class="sub">Registered to your account.</p>
@@ -761,13 +816,14 @@ async function portal(){
         <button onclick="ptTab('bank')">Open the bank</button>
         <button onclick="ptTab('veh')">Register a vehicle</button>
         <button onclick="ptTab('lic')">Check my license</button>
+        <button onclick="ptTab('sos')">Call emergency services</button>
         ${tix.length?`<button onclick="ptTab('tix')">My tickets</button>`:''}</div></div></div>`;
   }
   else if(PT_TAB==='lic'){
     body=warn+`<div class="panel ${on?'okbar':'alert'}"><div class="lbl" style="color:var(--mu);font-size:.74em;font-weight:700;letter-spacing:.12em;text-transform:uppercase">Driver license</div>
       <div class="score" style="color:${on?'#7ee2a1':'#ff8a8a'};margin:.3em 0">${on?'ACTIVE':'INACTIVE'}</div>
-      <p style="margin:.2em 0 .8em">${on?'Your license is valid. You are allowed to drive in the Republic of Stilton.':'You do not have a valid license, so you are not allowed to drive.'}</p>
-      <p class="mu" style="margin:0">${lic&&lic.updated?'Last updated '+esc(new Date(lic.updated).toLocaleString())+(lic.by_name?' by '+esc(lic.by_name):''):'No license has been issued to you yet.'}${lic&&lic.note?'<br>Note: '+esc(lic.note):''}</p></div>
+      <p style="margin:.2em 0 .8em">${on?'Your license is valid. You are allowed to drive in the Republic of Stilton.':'Staff have turned your license off, so you are not allowed to drive.'}</p>
+      <p class="mu" style="margin:0">${lic&&lic.updated?'Last updated '+esc(new Date(lic.updated).toLocaleString())+(lic.by_name?' by '+esc(lic.by_name):''):'Your license is active by default. Staff can turn it off.'}${lic&&lic.note?'<br>Note: '+esc(lic.note):''}</p></div>
       <div class="panel"><h3>How it works</h3><p class="sub" style="margin:0">Licenses are issued and managed by staff. If your license is inactive and you think that is a mistake, contact the staff team on Discord.</p></div>`;
   }
   else if(PT_TAB==='veh'){
@@ -779,6 +835,10 @@ async function portal(){
       <p><button class="btn" onclick="regVehicle()">Register vehicle</button></p></div>
       <div class="panel"><h3>Your vehicles (${PCARS.length})</h3><p class="sub">You can register up to 5.</p>
       <table class="tbl"><tr><th>Plate</th><th>Type</th><th>Vehicle</th><th>Color</th><th>Status</th><th></th></tr>${PCARS.map(c=>`<tr><td><b>${esc(c.plate)}</b></td><td>${esc(c.type)}</td><td>${esc(c.make)} ${esc(c.model)}</td><td>${esc(c.color||'')}</td><td>${vtag(c)}</td><td style="text-align:right"><button class="btn s" onclick="delVehicle('${safeId(c.id)}')">Remove</button></td></tr>`).join('')||'<tr><td colspan="6" class="mu">No vehicles registered yet.</td></tr>'}</table></div>`;
+  }
+  else if(PT_TAB==='sos'){
+    body=sosBody(sos,sosOn,warn);
+    if(sosOn)window.__sosT=setTimeout(()=>{if(tab==='portal'&&PT_TAB==='sos')portal()},10000);
   }
   if(PT_TAB==='bank'||PT_TAB==='tix'){
     $('#view').innerHTML=`<div class="st pt">${head}${warn}<div id="pbody"></div></div>`;
@@ -807,14 +867,14 @@ async function delVehicle(vid){
 // ---------- staff: licenses + vehicles (used by the "Licenses" tab in mod()) ----------
 const fillTicket=id=>{DT='tix';mod().then(()=>{const el=$('#tk_id');if(el&&id){el.value=id;el.scrollIntoView({block:'center'})}})};
 function licPanel(lics){
-  return `<div class="panel"><h3>Turn a license on or off</h3><p class="sub">Active means the person may drive. People with no record show as Inactive. Uses the staff PIN at the top right.</p>
+  return `<div class="panel"><h3>Turn a license on or off</h3><p class="sub">Everyone starts with an active license. Turn it off to stop someone from driving, and back on to restore it. Uses the staff PIN at the top right.</p>
     <div class="row"><div><label>Discord user ID *</label><input id="lc_id" inputmode="numeric" placeholder="e.g. 123456789012345678"></div><div><label>Note (optional)</label><input id="lc_note" maxlength="100" placeholder="e.g. Suspended for reckless driving"></div></div>
     <p><button class="btn" onclick="setLicense('active')">Turn ON (Active)</button> <button class="btn s" onclick="setLicense('inactive')">Turn OFF (Inactive)</button></p></div>
-    <div class="panel"><h3>Licenses on record (${lics.length})</h3><table class="tbl"><tr><th>User ID</th><th>Status</th><th>Note</th><th>By</th><th>Updated</th><th></th></tr>${lics.map(x=>`<tr><td>${esc(x.id)}</td><td><span class="tag ${x.status==='active'?'g':'r'}">${esc(x.status)}</span></td><td>${esc(x.note||'')}</td><td>${esc(x.by_name||'')}</td><td class="mu">${esc(new Date(x.updated||0).toLocaleString())}</td><td style="text-align:right;white-space:nowrap">${x.status==='active'?`<button class="btn s" onclick="licToggle('${safeId(x.id)}','inactive')">Turn off</button>`:`<button class="btn" onclick="licToggle('${safeId(x.id)}','active')">Turn on</button>`} <button class="btn s" onclick="fillTicket('${safeId(x.id)}')">Ticket</button></td></tr>`).join('')||'<tr><td colspan="6" class="mu">No licenses on record.</td></tr>'}</table></div>`;
+    <div class="panel"><h3>Changed by staff (${lics.length})</h3><table class="tbl"><tr><th>User ID</th><th>Status</th><th>Note</th><th>By</th><th>Updated</th><th></th></tr>${lics.map(x=>`<tr><td>${esc(x.id)}</td><td><span class="tag ${x.status==='active'?'g':'r'}">${esc(x.status)}</span></td><td>${esc(x.note||'')}</td><td>${esc(x.by_name||'')}</td><td class="mu">${esc(new Date(x.updated||0).toLocaleString())}</td><td style="text-align:right;white-space:nowrap">${x.status==='active'?`<button class="btn s" onclick="licToggle('${safeId(x.id)}','inactive')">Turn off</button>`:`<button class="btn" onclick="licToggle('${safeId(x.id)}','active')">Turn on</button>`} <button class="btn s" onclick="fillTicket('${safeId(x.id)}')">Ticket</button></td></tr>`).join('')||'<tr><td colspan="6" class="mu">Nobody has had their license changed.</td></tr>'}</table></div>`;
 }
 function regPanel(vehs,lics){
   const lm={};lics.forEach(l=>lm[l.id]=l.status);
-  const lt=id=>lm[id]==='active'?'<span class="tag g">license on</span>':'<span class="tag r">license off</span>';
+  const lt=id=>lm[id]!=='inactive'?'<span class="tag g">license on</span>':'<span class="tag r">license off</span>';
   const pend=vehs.filter(x=>vst(x)==='pending'),rest=vehs.filter(x=>vst(x)!=='pending');
   const who=x=>`${esc(x.ownerName||'')}<br><span class="mu">${esc(x.ownerId)}</span>`;
   return `<div class="panel"><h3>Waiting for review (${pend.length})</h3><p class="sub">Accept or deny new vehicle registrations. Motorcycles are not allowed: deny them. Uses the staff PIN at the top right.</p>
@@ -845,5 +905,393 @@ async function staffDelVehicle(vid){
   if(!vid||!confirm('Remove this vehicle?'))return;
   try{await staffWrite('v_'+vid,b=>b.delete(db.collection('vehicles').doc(vid)));say('Vehicle removed.');mod()}catch(e){say(e.message||fe(e))}
 }
+
+// =====================================================================
+// MODES: Standard / Emergency Response / Staff  (switcher + color themes)
+// =====================================================================
+(function(){
+  const st=document.createElement('style');
+  st.textContent=`
+  #who{display:flex;align-items:center;flex-wrap:wrap;gap:10px}
+  .modebtn{display:inline-flex;align-items:center;gap:.6em;background:var(--panel2);border:1px solid var(--bd);color:var(--tx);border-radius:8px;padding:8px 12px;font:600 .78rem system-ui,sans-serif;letter-spacing:.07em;text-transform:uppercase;cursor:pointer}
+  .modebtn:hover{filter:brightness(1.15)}
+  .modebtn i,#modemenu i{width:.7em;height:.7em;border-radius:50%;display:inline-block;flex:none}
+  .modebtn span{opacity:.7}
+  #modemenu{position:fixed;z-index:1500;width:min(300px,calc(100vw - 24px));background:var(--panel);border:1px solid var(--bd);border-radius:12px;padding:8px;box-shadow:0 18px 50px rgba(0,0,0,.6);animation:rise .18s both}
+  #modemenu .mm-h{color:var(--mu);font-size:.7rem;letter-spacing:.14em;text-transform:uppercase;padding:6px 10px 8px}
+  #modemenu button{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;align-items:center;width:100%;text-align:left;background:none;border:1px solid transparent;border-radius:9px;padding:10px;color:var(--tx);cursor:pointer;font:inherit}
+  #modemenu button:hover{background:var(--panel2)}
+  #modemenu button.on{border-color:var(--bd);background:var(--panel2)}
+  #modemenu button b{font-size:.92rem}#modemenu button small{grid-column:2;color:var(--mu);font-size:.78rem}
+
+  /* ---- STAFF MODE: navy blue with blue accents ---- */
+  body.m-staff{--bg:#06122b;--panel:#0c2150;--panel2:#12306d;--bd:#2c58b0;--red:#3b82f6;--blue:#60a5fa;--mu:#a6bbe0;
+    background:radial-gradient(1200px 520px at 50% -120px,#1d4ed8aa,transparent 70%),linear-gradient(180deg,#06122b,#081a3d)}
+  body.m-staff::before{background:rgba(59,130,246,.30)}body.m-staff::after{background:rgba(96,165,250,.16)}
+  body.m-staff header{background:linear-gradient(90deg,#071a3b,#0e2f66)}
+  body.m-staff .bar{background:#071a3b;border-bottom-color:#2c58b0}
+  body.m-staff .panel,body.m-staff .kpis,body.m-staff .card{background:#0b1f4a;border-color:#2c58b0}
+  body.m-staff .kpi,body.m-staff .st-head{border-color:#2c58b0}
+  body.m-staff .kpi.click:hover{background:#10285c}
+  body.m-staff .tbl th{border-bottom-color:#2c58b0}body.m-staff .tbl td{border-bottom-color:#183a7a}
+  body.m-staff input,body.m-staff select,body.m-staff textarea{background:#071634;border-color:#2c58b0}
+  body.m-staff .acts button{background:#0f2860;border-color:#2c58b0}body.m-staff .acts button:hover{background:#17357c;border-color:#5b8de0}
+  body.m-staff .brand small::after{content:" \\2022  STAFF MODE";color:#8fb6ff}
+
+  /* ---- EMERGENCY RESPONSE MODE: near-black with red/blue emergency lights ---- */
+  body.m-er{--bg:#04060a;--panel:#0a0e15;--panel2:#121824;--bd:#242d3d;--tx:#f2f4f8;--mu:#8793a6;--red:#ff2d2d;--blue:#2d6bff;
+    background:radial-gradient(900px 420px at 50% -120px,#2a0a10,transparent 70%),linear-gradient(180deg,#04060a,#070a10)}
+  body.m-er::before{background:rgba(255,45,45,.20)}body.m-er::after{background:rgba(45,107,255,.22)}
+  body.m-er header{background:linear-gradient(90deg,#05070b,#0b0f17)}
+  body.m-er header::after{background:linear-gradient(90deg,#ff2d2d 0,#ff2d2d 25%,#2d6bff 25%,#2d6bff 50%,#ff2d2d 50%,#ff2d2d 75%,#2d6bff 75%,#2d6bff 100%);background-size:200% 100%;animation:flow 5s linear infinite;box-shadow:0 0 22px rgba(255,45,45,.45)}
+  body.m-er .bar{background:#05070b;border-bottom-color:#242d3d}
+  body.m-er .panel,body.m-er .kpis,body.m-er .card{background:#080b11;border-color:#242d3d}
+  body.m-er .kpi,body.m-er .st-head{border-color:#242d3d}
+  body.m-er .kpi.click:hover{background:#0d121b}
+  body.m-er .tbl th{border-bottom-color:#242d3d}body.m-er .tbl td{border-bottom-color:#141b27}
+  body.m-er input,body.m-er select,body.m-er textarea{background:#04060a;border-color:#242d3d}
+  body.m-er .acts button{background:#0b1019;border-color:#242d3d}body.m-er .acts button:hover{background:#121a28;border-color:#3a4a66}
+  body.m-er .brand small::after{content:" \\2022  EMERGENCY RESPONSE MODE";color:#ff6b6b}
+  .er .alert{border-left:4px solid var(--red)}
+  .tag.p{color:#7aa7ff;border-color:#2d4f94}.tag.e{color:#ff9aa4;border-color:#6d2630}.tag.f{color:#ffb86b;border-color:#6b4520}
+  .er .kpi .big.good{color:#7ee2a1}.er .kpi .big.badc{color:#ff8a8a}`;
+  document.head.appendChild(st);
+  addEventListener('keydown',e=>{if(e.key==='Escape')closeModeMenu()});
+})();
+
+const MODES={std:{name:'Standard',desc:'Everyday citizen view: bank, license, vehicles',dot:'#e11d2e'},
+  er:{name:'Emergency Response',desc:'Police, EMS and fire: dispatch, units, lookups',dot:'#ff2d2d'},
+  staff:{name:'Staff',desc:'Staff console: bans, bank, licenses, reviews',dot:'#3b82f6'}};
+function modesFor(){return S.user?['std',...(S.ers?['er']:[]),...(S.staff?['staff']:[])]:['std']}
+function modeBtn(){return modesFor().length>1?`<button class="modebtn" id="modebtn" onclick="modeMenu(event)"><i style="background:${MODES[MODE].dot}"></i>${MODES[MODE].name}<span>&#9662;</span></button>`:''}
+function closeModeMenu(){const m=$('#modemenu');if(m)m.remove()}
+function modeMenu(e){
+  if(e)e.stopPropagation();
+  if($('#modemenu'))return closeModeMenu();
+  const b=$('#modebtn');if(!b)return;const r=b.getBoundingClientRect(),m=document.createElement('div');m.id='modemenu';
+  m.innerHTML=`<div class="mm-h">Switch mode</div>`+modesFor().map(k=>`<button class="${k===MODE?'on':''}" onclick="setMode('${k}')"><i style="background:${MODES[k].dot}"></i><b>${MODES[k].name}</b><small>${MODES[k].desc}</small></button>`).join('');
+  document.body.appendChild(m);
+  m.style.top=(r.bottom+8)+'px';m.style.right=Math.max(12,innerWidth-r.right)+'px';
+  setTimeout(()=>document.addEventListener('click',closeModeMenu,{once:true}),0);
+}
+function setMode(m){
+  if(BANNED||DOWN||!modesFor().includes(m))return;
+  MODE=m;try{localStorage.setItem('ros_mode',m)}catch{}
+  closeModeMenu();tab=m==='staff'?'mod':m==='er'?'er':'home';draft.tab=tab;say('');render();scrollTo(0,0);
+}
+
+// =====================================================================
+// EMERGENCY RESPONSE CONSOLE: dispatch (incl. civilian 911), units, duty hours, warrants, lookups, BOLOs
+// =====================================================================
+let ET='disp',ERPIN='',ERT=null,HB=null,HBWARN=false;
+const GRACE=3*60e3;   // a unit is taken off duty this long after its last heartbeat (the person left the site)
+const erTab=k=>{ET=k;er()};
+const CALLTYPES=['Police','EMS','Fire','Other'],DEPTS=['Police','EMS','Fire','Dispatch','Other'],UST=['Available','En route','On scene','Busy','Off duty'];
+const dtag=d=>`<span class="tag ${d==='Police'?'p':d==='EMS'?'e':d==='Fire'?'f':''}">${esc(d||'Other')}</span>`;
+const ptag=p=>`<span class="tag ${p==1?'r':p==2?'a':''}">P${esc(p||3)}</span>`;
+const stag=s=>`<span class="tag ${s==='Available'?'g':s==='Off duty'||s==='Pending'||s==='Closed'||s==='Cancelled'?'':'a'}">${esc(s||'')}</span>`;
+const NEXTST={Pending:['En route','Mark en route'],'En route':['On scene','Mark on scene'],'On scene':['Closed','Clear call']};
+const keyInfo=k=>({col:k[0]==='x'?'emergency':'calls',id:k.slice(2)});
+const fmtMin=m=>{m=Math.max(0,Math.round(m));return m<60?m+'m':Math.floor(m/60)+'h '+String(m%60).padStart(2,'0')+'m'};
+const myCallsign=()=>{let c='';try{c=localStorage.getItem('ros_cs')||''}catch{}
+  if(!c){c=(prompt('Your callsign (for example P-12)')||'').trim().slice(0,12);if(c)try{localStorage.setItem('ros_cs',c)}catch{}}return c};
+
+// ---------- duty time: on duty only while the site stays open ----------
+// A unit counts as on duty while its heartbeat is fresh. When the person leaves the site the heartbeat stops,
+// they drop to Off duty after GRACE, and the time is logged up to their last heartbeat.
+const lastSeen=u=>Math.max((u&&u.seen)||0,(u&&u.updated)||0);
+const effSt=u=>u&&u.status&&u.status!=='Off duty'&&Date.now()-lastSeen(u)<GRACE?u.status:'Off duty';
+function dutyView(u){
+  const now=Date.now();u=u||{};const sess=(u.sessions||[]).map(x=>({s:x.s,e:x.e}));let total=u.totalMin||0,live=0;
+  if(u.status&&u.status!=='Off duty'&&u.onSince){
+    if(now-lastSeen(u)<GRACE)live=now-u.onSince;
+    else{sess.push({s:u.onSince,e:lastSeen(u),auto:true});total+=Math.round((lastSeen(u)-u.onSince)/60000)}}
+  const week=sess.filter(x=>x.e>now-7*864e5).reduce((a,x)=>a+Math.max(0,Math.round((x.e-x.s)/60000)),0)+Math.round(live/60000);
+  return{sess:sess.sort((a,b)=>b.s-a.s),total:total+Math.round(live/60000),week,live};
+}
+function dutyBeat(on){
+  clearInterval(HB);HB=null;if(!on||!S.user)return;
+  const beat=async()=>{if(!S.user||BANNED)return;
+    try{await authed();await db.collection('units').doc(S.user.id).update({seen:Date.now()})}
+    catch(e){if(e&&e.code==='permission-denied'&&!HBWARN){HBWARN=true;say('The duty heartbeat was blocked by the database rules. Staff need to publish the newest rules, or you will be taken off duty after 3 minutes.')}}};
+  HB=setInterval(beat,window.DUTY_BEAT_MS||45000);
+}
+async function resumeDuty(){   // refreshing the page keeps you on duty; closing it does not
+  if(!S.ers||!S.user)return;
+  try{await authed();const d=await db.collection('units').doc(S.user.id).get();
+    if(d.exists&&effSt(d.data())!=='Off duty'){dutyBeat(true);db.collection('units').doc(S.user.id).update({seen:Date.now()}).catch(()=>{})}}catch{}
+}
+
+// same idea as staffWrite, but with the duty PIN that police, EMS and fire share (staff PIN also works)
+async function erWrite(id,fn){
+  let p=(($('#e_pin')&&$('#e_pin').value)||ERPIN).trim();
+  if(!p)p=(prompt('Duty PIN')||'').trim();
+  if(!p)throw new Error('Enter the duty PIN first');
+  const ref=db.collection('proofs').doc(id);
+  try{await ref.set({pin:p})}catch(e){if(e&&e.code==='permission-denied'){ERPIN='';throw new Error('Duty PIN rejected. Check it and try again.')}throw e}
+  await ref.delete().catch(()=>{});
+  ERPIN=p;
+  const b=db.batch();b.set(ref,{pin:p});fn(b);
+  try{await b.commit()}
+  catch(e){if(e&&e.code==='permission-denied')throw new Error('Your PIN is correct, but the database rules blocked this change ('+id+'). Make sure the newest rules are published.');throw e}
+  finally{ref.delete().catch(()=>{})}
+}
+
+async function er(){
+  if(!S.user||!S.ers)return go('home');
+  clearTimeout(ERT);
+  const id=S.user.id;let me=null;
+  try{await authed();const d=await db.collection('units').doc(id).get();me=d.exists?d.data():null}catch{}
+  const duty=effSt(me)!=='Off duty',wasAuto=!!me&&me.status!=='Off duty'&&!duty;
+  const nav=[['disp','Dispatch'],['units','Units'],['hours','Hours'],['warr','Warrants'],['look','Lookup'],['bolo','BOLOs']];
+  const head=`<div class="st-head"><div class="st-title"><h2>Emergency Response</h2><span>Police &middot; EMS &middot; Fire</span></div>
+    <div class="st-tabs">${nav.map(([k,l])=>`<button class="${ET===k?'on':''}" onclick="erTab('${k}')">${l}</button>`).join('')}</div>
+    <div class="st-r"><span class="st-stat ${duty?'':'bad'}">${duty?'On duty &middot; '+esc(me.callsign||''):'Off duty'}</span><input id="e_pin" type="password" placeholder="Duty PIN" title="Duty PIN, used for every action here" name="ros-duty-pin" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" oninput="ERPIN=this.value.trim()" value="${esc(ERPIN)}"></div></div>`;
+  let form='';
+  if(ET==='disp')form=`<div class="panel"><h3>New call for service</h3><p class="sub">Log a call so units can respond. Calls from civilians (911) appear in the list below automatically. Uses the duty PIN at the top right.</p>
+    <div class="row"><div><label>Type</label><select id="cl_type">${CALLTYPES.map(x=>`<option>${x}</option>`).join('')}</select></div><div><label>Priority</label><select id="cl_pri"><option value="1">1 - Emergency</option><option value="2" selected>2 - Urgent</option><option value="3">3 - Routine</option></select></div></div>
+    <div class="row"><div><label>Location *</label><input id="cl_loc" maxlength="80" placeholder="e.g. Main St &amp; 4th Ave"></div><div><label>Details *</label><input id="cl_det" maxlength="200" placeholder="e.g. Two-vehicle collision, one injured"></div></div>
+    <p><button class="btn" onclick="newCall()">Create call</button></p></div>`;
+  else if(ET==='units'){let cs='',dp='';try{cs=localStorage.getItem('ros_cs')||'';dp=localStorage.getItem('ros_dept')||''}catch{}
+    cs=(me&&me.callsign)||cs;dp=(me&&me.dept)||dp||(S.police?'Police':'EMS');
+    form=`${wasAuto?`<div class="panel alert"><h3>You were taken off duty</h3><p class="sub" style="margin:0">You left the site, so your duty ended at ${esc(new Date(lastSeen(me)).toLocaleTimeString())} and the time was logged. Set your status below to go back on duty.</p></div>`:''}
+    <div class="panel"><h3>My status</h3><p class="sub">Set your callsign, department and status so dispatch can see you. You stay on duty while this site is open, and go off duty about 3 minutes after you leave it. Uses the duty PIN at the top right.</p>
+    <div class="row"><div><label>Callsign *</label><input id="u_cs" maxlength="12" placeholder="e.g. P-12" value="${esc(cs)}"></div><div><label>Department</label><select id="u_dept">${DEPTS.map(x=>`<option ${x===dp?'selected':''}>${x}</option>`).join('')}</select></div></div>
+    <label>Status</label><select id="u_st">${UST.map(x=>`<option ${(duty?me.status:'Available')===x?'selected':''}>${x}</option>`).join('')}</select>
+    <p><button class="btn" onclick="setUnit()">Update status</button></p></div>`}
+  else if(ET==='warr')form=(S.police||S.staff)?`<div class="panel"><h3>Request a warrant</h3><p class="sub">Send a request for review. A staff member or judge approves or denies it. Uses the duty PIN at the top right.</p>
+    <div class="row"><div><label>Type</label><select id="wr_type"><option>Arrest</option><option>Search</option><option>Other</option></select></div><div><label>Subject (name or description) *</label><input id="wr_sub" maxlength="80" placeholder="e.g. John Miller"></div></div>
+    <div class="row"><div><label>Subject Discord ID (optional)</label><input id="wr_pid" inputmode="numeric" placeholder="Lets lookups flag the warrant"></div><div><label>Location (for search warrants)</label><input id="wr_loc" maxlength="80" placeholder="e.g. 12 Harbor Rd"></div></div>
+    <label>Reason / probable cause *</label><textarea id="wr_reason" rows="3" maxlength="500" placeholder="What happened and why this warrant is needed"></textarea>
+    <p><button class="btn" onclick="requestWarrant()">Request warrant</button></p></div>`
+    :`<div class="panel"><p class="sub" style="margin:0">Only police and staff can request warrants. You can still see approved warrants below.</p></div>`;
+  else if(ET==='look')form=`<div class="panel"><h3>Lookup</h3><p class="sub">Check a plate or a person: registration, license, tickets, warrants and active BOLOs.</p>
+    <div class="row"><div><label>License plate</label><input id="lp_plate" maxlength="10" placeholder="e.g. ROS1234" onkeydown="if(event.key==='Enter')lookPlate()"></div><div><label>Discord user ID</label><input id="lp_pid" inputmode="numeric" placeholder="e.g. 123456789012345678" onkeydown="if(event.key==='Enter')lookPerson()"></div></div>
+    <p><button class="btn" onclick="lookPlate()">Search plate</button> <button class="btn s" onclick="lookPerson()">Search person</button></p></div>`;
+  else if(ET==='bolo')form=`<div class="panel"><h3>New BOLO</h3><p class="sub">Be on the lookout for a vehicle or a person. Vehicle BOLOs flag automatically in plate lookups. Uses the duty PIN at the top right.</p>
+    <div class="row"><div><label>Type</label><select id="bo_kind"><option>Vehicle</option><option>Person</option></select></div><div><label>Plate or description *</label><input id="bo_sub" maxlength="80" placeholder="e.g. ROS1234, or tall man in a red jacket"></div></div>
+    <label>Details</label><input id="bo_det" maxlength="200" placeholder="e.g. Fled a traffic stop heading north">
+    <p><button class="btn" onclick="newBolo()">Add BOLO</button></p></div>`;
+  $('#view').innerHTML=`<div class="st er">${head}${form}<div id="erdata">${ET==='look'?'':'<div class="loader"><span class="spin"></span><span>Loading…</span></div>'}</div></div>`;
+  if(ET!=='look')erLoad();
+}
+async function erLoad(){
+  const box=$('#erdata');if(!box||tab!=='er')return;clearTimeout(ERT);
+  try{await authed();
+    if(ET==='disp')await loadCalls(box);else if(ET==='units')await loadUnits(box);else if(ET==='hours')await loadHours(box);
+    else if(ET==='warr')await loadWarrants(box);else if(ET==='bolo')await loadBolos(box)}
+  catch(e){box.innerHTML=`<div class="panel"><p class="mu" style="margin:0">Could not load: ${esc(e&&e.code==='permission-denied'?'publish the newest Firestore rules':(e&&e.message)||'error')}</p></div>`}
+  if(ET!=='look'&&ET!=='hours')ERT=setTimeout(()=>{if(tab==='er')erLoad()},15000);
+}
+
+// ---------- dispatch (staff-logged calls + civilian 911 requests) ----------
+const isOpenCall=c=>c.status!=='Closed'&&c.status!=='Cancelled';
+async function loadCalls(box){
+  const [cq,xq]=await Promise.all([db.collection('calls').orderBy('created','desc').limit(60).get(),db.collection('emergency').orderBy('created','desc').limit(40).get().catch(()=>null)]);
+  const rows=cq.docs.map(d=>({...d.data(),key:'c_'+d.id,id:d.id,col:'calls'}));
+  if(xq)xq.docs.forEach(d=>rows.push({...d.data(),key:'x_'+d.id,id:d.id,col:'emergency',civ:true}));
+  window.__calls={};rows.forEach(c=>window.__calls[c.key]=c);
+  const open=rows.filter(isOpenCall).sort((a,b)=>(a.priority||3)-(b.priority||3)||(a.created||0)-(b.created||0));
+  const closed=rows.filter(c=>!isOpenCall(c)).sort((a,b)=>(b.updated||b.created||0)-(a.updated||a.created||0)).slice(0,8);
+  box.innerHTML=`<div class="kpis"><div class="kpi"><div class="lbl">Open calls</div><div class="big">${open.length}</div><div class="mu">waiting or in progress</div></div>
+    <div class="kpi"><div class="lbl">Priority 1</div><div class="big ${open.some(c=>c.priority==1)?'badc':''}">${open.filter(c=>c.priority==1).length}</div><div class="mu">emergencies</div></div>
+    <div class="kpi"><div class="lbl">No unit yet</div><div class="big ${open.some(c=>!(c.units||[]).length)?'badc':''}">${open.filter(c=>!(c.units||[]).length).length}</div><div class="mu">need a responder</div></div>
+    <div class="kpi"><div class="lbl">Civilian 911</div><div class="big">${open.filter(c=>c.civ).length}</div><div class="mu">open requests</div></div></div>
+    <div class="panel"><div class="hl"><h3>Active calls (${open.length})</h3><span class="mu" style="font-size:.85em">Refreshes every 15 seconds</span></div><p class="sub">Highest priority first.</p>
+    <table class="tbl"><tr><th>Pri</th><th>Type</th><th>Location</th><th>Status</th><th>Units</th><th>Age</th><th></th></tr>${open.map(c=>{const n=NEXTST[c.status]||NEXTST.Pending;
+      return `<tr><td>${ptag(c.priority)}</td><td>${dtag(c.type)}${c.civ?' <span class="tag r">911</span>':''}</td><td><b>${esc(c.location)}</b><br><span class="mu">${esc(c.details||'')}</span>${c.civ?`<br><span class="mu">Caller: ${esc(c.callerName||'unknown')}</span>`:''}</td><td>${stag(c.status)}</td><td>${(c.units||[]).map(u=>`<span class="tag p">${esc(u)}</span>`).join(' ')||'<span class="mu">none</span>'}</td><td class="mu">${ago(c.created)}</td>
+      <td style="text-align:right;white-space:nowrap"><button class="btn s" onclick="callAttach('${safeId(c.key)}')">Attach me</button> <button class="btn" onclick="callNext('${safeId(c.key)}')">${n[1]}</button></td></tr>`}).join('')||'<tr><td colspan="7" class="mu">No open calls. All quiet.</td></tr>'}</table></div>
+    ${closed.length?`<div class="panel"><h3>Recently cleared</h3><table class="tbl"><tr><th>Type</th><th>Location</th><th>Result</th><th>Units</th><th>Opened</th></tr>${closed.map(c=>`<tr><td>${dtag(c.type)}${c.civ?' <span class="tag r">911</span>':''}</td><td>${esc(c.location)}<br><span class="mu">${esc(c.details||'')}</span></td><td>${stag(c.status)}</td><td>${(c.units||[]).map(esc).join(', ')||'—'}</td><td class="mu">${ago(c.created)}</td></tr>`).join('')}</table></div>`:''}`;
+}
+async function newCall(){
+  const type=$('#cl_type').value,pri=+$('#cl_pri').value,loc=$('#cl_loc').value.trim(),det=$('#cl_det').value.trim();
+  if(!loc||!det)return say('Enter the location and the details');
+  const cid=newId('calls'),now=Date.now();
+  try{await erWrite('e_c_'+cid,b=>b.set(db.collection('calls').doc(cid),{type,priority:pri,location:loc.slice(0,80),details:det.slice(0,200),status:'Pending',units:[],by:S.user.id,by_name:S.user.name.slice(0,80),created:now,updated:now}));
+    say('Call created.');er()}catch(e){say(e.message||fe(e))}
+}
+async function callAttach(key){
+  const c=(window.__calls||{})[key];if(!c)return;const cs=myCallsign();if(!cs)return say('A callsign is needed to attach to a call');
+  const k=keyInfo(key);
+  try{await erWrite((k.col==='emergency'?'e_x_':'e_c_')+k.id,b=>b.update(db.collection(k.col).doc(k.id),{units:FV().arrayUnion(cs),status:c.status==='Pending'?'En route':c.status,updated:Date.now()}));say('Attached as '+cs+'.');erLoad()}catch(e){say(e.message||fe(e))}
+}
+async function callNext(key){
+  const c=(window.__calls||{})[key];if(!c)return;const n=NEXTST[c.status]||NEXTST.Pending,k=keyInfo(key);
+  try{await erWrite((k.col==='emergency'?'e_x_':'e_c_')+k.id,b=>b.update(db.collection(k.col).doc(k.id),{status:n[0],updated:Date.now()}));say(n[0]==='Closed'?'Call cleared.':'Call is now '+n[0]+'.');erLoad()}catch(e){say(e.message||fe(e))}
+}
+
+// ---------- units ----------
+async function loadUnits(box){
+  const q=await db.collection('units').orderBy('updated','desc').limit(100).get(),now=Date.now();
+  const rows=q.docs.map(d=>{const u={id:d.id,...d.data()};u.eff=effSt(u);return u}).filter(u=>u.eff!=='Off duty'||now-lastSeen(u)<12*3600e3),on=rows.filter(u=>u.eff!=='Off duty');
+  const n=d=>on.filter(u=>u.dept===d).length;
+  box.innerHTML=`<div class="kpis"><div class="kpi"><div class="lbl">Police</div><div class="big">${n('Police')}</div><div class="mu">on duty</div></div><div class="kpi"><div class="lbl">EMS</div><div class="big">${n('EMS')}</div><div class="mu">on duty</div></div><div class="kpi"><div class="lbl">Fire</div><div class="big">${n('Fire')}</div><div class="mu">on duty</div></div><div class="kpi"><div class="lbl">Total on duty</div><div class="big">${on.length}</div><div class="mu">all departments</div></div></div>
+    <div class="panel"><div class="hl"><h3>Unit roster</h3><span class="mu" style="font-size:.85em">Refreshes every 15 seconds</span></div><p class="sub">Units drop to Off duty about 3 minutes after they leave the site.</p>
+    <table class="tbl"><tr><th>Callsign</th><th>Name</th><th>Dept</th><th>Status</th><th>On duty for</th><th>Last seen</th></tr>${rows.map(u=>`<tr><td><b>${esc(u.callsign||'—')}</b></td><td>${esc(u.name||'')}</td><td>${dtag(u.dept)}</td><td>${stag(u.eff)}</td><td>${u.eff!=='Off duty'&&u.onSince?esc(fmtMin((now-u.onSince)/60000)):'—'}</td><td class="mu">${ago(lastSeen(u))}</td></tr>`).join('')||'<tr><td colspan="6" class="mu">Nobody has set a status yet.</td></tr>'}</table></div>`;
+}
+async function setUnit(){
+  const cs=$('#u_cs').value.trim().slice(0,12),dept=$('#u_dept').value,status=$('#u_st').value;
+  if(!cs)return say('Enter your callsign');
+  try{await authed();
+    const d=await db.collection('units').doc(S.user.id).get(),old=d.exists?d.data():null,now=Date.now();
+    let sessions=(old&&old.sessions)||[],total=(old&&old.totalMin)||0,onSince=(old&&old.onSince)||0;
+    const wasOn=!!old&&old.status&&old.status!=='Off duty'&&!!onSince,fresh=wasOn&&now-lastSeen(old)<GRACE;
+    const close=end=>{if(onSince&&end>onSince){sessions=[...sessions,{s:onSince,e:end}].slice(-60);total+=Math.round((end-onSince)/60000)}onSince=0};
+    if(wasOn&&!fresh)close(lastSeen(old));          // they left the site last time: log it up to their last heartbeat
+    else if(wasOn&&status==='Off duty')close(now);  // they signed off
+    if(status==='Off duty')onSince=0;else if(!onSince)onSince=now;
+    await erWrite('e_u_'+S.user.id,b=>b.set(db.collection('units').doc(S.user.id),{name:S.user.name.slice(0,80),callsign:cs,dept,status,updated:now,seen:now,onSince,sessions,totalMin:total}));
+    dutyBeat(status!=='Off duty');
+    try{localStorage.setItem('ros_cs',cs);localStorage.setItem('ros_dept',dept)}catch{}
+    say(status==='Off duty'?'You are off duty. Your time was logged.':'Status set to '+status+'.');er()}catch(e){say(e.message||fe(e))}
+}
+
+// ---------- duty hours ----------
+async function loadHours(box){
+  const d=await db.collection('units').doc(S.user.id).get(),me=d.exists?d.data():null,v=dutyView(me);
+  let all='';
+  if(S.staff){const q=await db.collection('units').get(),rows=q.docs.map(x=>({id:x.id,...x.data()})).sort((a,b)=>dutyView(b).total-dutyView(a).total);
+    all=`<div class="panel"><h3>All units (staff)</h3><p class="sub">Total logged duty time for everyone who has gone on duty.</p><table class="tbl"><tr><th>Callsign</th><th>Name</th><th>Dept</th><th>Now</th><th>Last 7 days</th><th>All time</th></tr>${rows.map(u=>{const w=dutyView(u);return `<tr><td><b>${esc(u.callsign||'—')}</b></td><td>${esc(u.name||'')}</td><td>${dtag(u.dept)}</td><td>${stag(effSt(u))}</td><td>${esc(fmtMin(w.week))}</td><td>${esc(fmtMin(w.total))}</td></tr>`}).join('')||'<tr><td colspan="6" class="mu">No duty time logged yet.</td></tr>'}</table></div>`}
+  box.innerHTML=`<div class="kpis"><div class="kpi"><div class="lbl">This shift</div><div class="big ${v.live?'good':''}">${v.live?esc(fmtMin(v.live/60000)):'—'}</div><div class="mu">${v.live?'on duty now':'not on duty'}</div></div>
+    <div class="kpi"><div class="lbl">Last 7 days</div><div class="big">${esc(fmtMin(v.week))}</div><div class="mu">on duty</div></div>
+    <div class="kpi"><div class="lbl">All time</div><div class="big">${esc(fmtMin(v.total))}</div><div class="mu">logged</div></div></div>
+    <div class="panel"><h3>My duty log</h3><p class="sub">Time is logged while you are on duty and the site is open. If you close the site, you go off duty after about 3 minutes and the time is logged up to when you left.</p>
+    <table class="tbl"><tr><th>Started</th><th>Ended</th><th>Length</th><th>Note</th></tr>${v.live?`<tr><td>${esc(new Date(me.onSince).toLocaleString())}</td><td class="mu">now</td><td>${esc(fmtMin(v.live/60000))}</td><td><span class="tag g">on duty</span></td></tr>`:''}${v.sess.slice(0,15).map(x=>`<tr><td>${esc(new Date(x.s).toLocaleString())}</td><td>${esc(new Date(x.e).toLocaleString())}</td><td>${esc(fmtMin((x.e-x.s)/60000))}</td><td class="mu">${x.auto?'Left the site':'Signed off'}</td></tr>`).join('')||(v.live?'':'<tr><td colspan="4" class="mu">No duty time logged yet. Go on duty from the Units tab.</td></tr>')}</table></div>${all}`;
+}
+
+// ---------- warrants ----------
+const wActive=w=>w.status==='approved'&&(!w.expires||w.expires>Date.now());
+const wtag=w=>{const x=w.status==='approved'&&w.expires&&w.expires<=Date.now()?'expired':w.status;return `<span class="tag ${x==='approved'?'g':x==='denied'?'r':x==='pending'?'a':''}">${esc(x)}</span>`};
+const wrow=(w,mode,rv)=>`<tr><td><span class="tag ${w.type==='Arrest'?'r':w.type==='Search'?'a':''}">${esc(w.type)}</span></td><td><b>${esc(w.subject)}</b>${w.subjectId?`<br><span class="mu">${esc(w.subjectId)}</span>`:''}${w.location?`<br><span class="mu">${esc(w.location)}</span>`:''}</td><td>${esc(w.reason)}${w.decision_note?`<br><span class="mu">Note: ${esc(w.decision_note)}</span>`:''}</td><td>${esc(w.requested_name||'')}<br><span class="mu">${esc(w.callsign||'')} &middot; ${ago(w.created)}</span></td><td>${wtag(w)}${w.status==='approved'&&w.expires?`<br><span class="mu">expires ${esc(new Date(w.expires).toLocaleDateString())}</span>`:''}</td>
+  <td style="text-align:right;white-space:nowrap">${mode==='pend'?(rv?`<button class="btn" onclick="decideWarrant('${safeId(w.id)}','approved')">Approve</button> <button class="btn s" onclick="decideWarrant('${safeId(w.id)}','denied')">Deny</button>`:'<span class="mu">Awaiting review</span>'):mode==='act'?`<button class="btn s" onclick="serveWarrant('${safeId(w.id)}')">Mark served</button>`:''}</td></tr>`;
+async function loadWarrants(box){
+  const q=await db.collection('warrants').orderBy('created','desc').limit(80).get(),rows=q.docs.map(d=>({id:d.id,...d.data()}));
+  const pend=rows.filter(w=>w.status==='pending'),act=rows.filter(wActive),rest=rows.filter(w=>!pend.includes(w)&&!act.includes(w)).slice(0,10),rv=S.staff||S.judge;
+  const th='<tr><th>Type</th><th>Subject</th><th>Reason</th><th>Requested by</th><th>Status</th><th></th></tr>';
+  box.innerHTML=`${rv?`<div class="panel"><h3>Reviewer sign-off</h3><p class="sub">Approve or deny warrant requests. This needs the staff (reviewer) PIN. Approved warrants expire after 7 days.</p><input id="b_pin" type="password" placeholder="Reviewer PIN" name="ros-reviewer-pin" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" oninput="PIN=this.value.trim()" value="${esc(pin())}" style="max-width:20em"></div>`:''}
+    <div class="panel"><div class="hl"><h3>Waiting for review (${pend.length})</h3><span class="mu" style="font-size:.85em">Refreshes every 15 seconds</span></div><table class="tbl">${th}${pend.map(w=>wrow(w,'pend',rv)).join('')||'<tr><td colspan="6" class="mu">No warrant requests waiting.</td></tr>'}</table></div>
+    <div class="panel"><h3>Active warrants (${act.length})</h3><table class="tbl">${th}${act.map(w=>wrow(w,'act',rv)).join('')||'<tr><td colspan="6" class="mu">No active warrants.</td></tr>'}</table></div>
+    ${rest.length?`<div class="panel"><h3>Recently closed</h3><table class="tbl">${th}${rest.map(w=>wrow(w,'done',rv)).join('')}</table></div>`:''}`;
+}
+async function requestWarrant(){
+  const type=$('#wr_type').value,sub=$('#wr_sub').value.trim(),pid=($('#wr_pid').value||'').replace(/\D/g,''),loc=$('#wr_loc').value.trim(),reason=$('#wr_reason').value.trim();
+  if(!sub)return say('Enter who the warrant is for');
+  if(pid&&(pid.length<15||pid.length>25))return say('The Discord ID looks wrong. Leave it empty if you do not have it.');
+  if(reason.length<10)return say('Explain the reason (at least a sentence)');
+  const wid=newId('warrants');let cs='';try{cs=localStorage.getItem('ros_cs')||''}catch{}
+  try{await erWrite('e_w_'+wid,b=>b.set(db.collection('warrants').doc(wid),{type,subject:sub.slice(0,80),subjectId:pid,location:loc.slice(0,80),reason:reason.slice(0,500),status:'pending',requested_by:S.user.id,requested_name:S.user.name.slice(0,80),callsign:cs,created:Date.now()}));
+    say('Warrant requested. A reviewer will look at it.');er()}catch(e){say(e.message||fe(e))}
+}
+async function decideWarrant(id,status){
+  if(!(S.staff||S.judge)||!id)return;let note='';
+  if(status==='denied'){const r=prompt('Reason for denying (optional)');if(r===null)return;note=r.trim().slice(0,200)}
+  const now=Date.now();
+  try{await staffWrite('w_'+id,b=>b.update(db.collection('warrants').doc(id),{status,decision_note:note,decided_by:S.user.id,decided_name:S.user.name.slice(0,80),decided:now,expires:status==='approved'?now+7*864e5:0}));
+    say(status==='approved'?'Warrant approved.':'Warrant denied.');erLoad()}catch(e){say(e.message||fe(e))}
+}
+async function serveWarrant(id){
+  if(!id||!confirm('Mark this warrant as served?'))return;
+  try{await erWrite('e_w_'+id,b=>b.update(db.collection('warrants').doc(id),{status:'served',served_by:S.user.name.slice(0,80),served:Date.now()}));say('Warrant marked served.');erLoad()}catch(e){say(e.message||fe(e))}
+}
+
+// ---------- lookups ----------
+async function lookPlate(){
+  const plate=normPlate($('#lp_plate').value),box=$('#erdata');
+  if(plate.length<2)return say('Enter a license plate');
+  box.innerHTML=LOADER();
+  try{await authed();const d=await db.collection('vehicles').doc('p_'+plate).get();
+    if(!d.exists){const bq=await db.collection('bolos').orderBy('created','desc').limit(60).get();
+      const hit=bq.docs.map(x=>x.data()).find(b=>b.status==='active'&&b.kind==='Vehicle'&&normPlate(b.subject)===plate);
+      box.innerHTML=`${hit?`<div class="panel alert"><h3>BOLO on this plate</h3><p class="sub" style="margin:0">${esc(hit.subject)}: ${esc(hit.details||'no details')} (by ${esc(hit.by_name||'')})</p></div>`:''}<div class="panel"><h3>No registration found</h3><p class="sub" style="margin:0">Nothing is registered under plate <b>${esc(plate)}</b>.</p></div>`;return}
+    showPerson(d.data().ownerId,plate)}
+  catch(e){box.innerHTML=`<div class="panel"><p class="mu" style="margin:0">Could not look up: ${esc(e&&e.code==='permission-denied'?'publish the newest Firestore rules':(e&&e.message)||'error')}</p></div>`}
+}
+function lookPerson(){
+  const id=($('#lp_pid').value||'').replace(/\D/g,'');
+  if(id.length<15||id.length>25)return say('Enter the Discord user ID');
+  showPerson(id,'')
+}
+async function showPerson(id,plate){
+  const box=$('#erdata');box.innerHTML=LOADER();
+  try{await authed();
+    const [l,v,t,bq,wq]=await Promise.all([db.collection('licenses').doc(id).get(),db.collection('vehicles').where('ownerId','==',id).get(),db.collection('tickets').where('to','==',id).get(),db.collection('bolos').orderBy('created','desc').limit(60).get(),db.collection('warrants').where('subjectId','==',id).get().catch(()=>null)]);
+    const lic=l.exists?l.data():null,licOn=!lic||lic.status!=='inactive';
+    const cars=v.docs.map(d=>({id:d.id,...d.data()})),tx=t.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.created||0)-(a.created||0)),open=tx.filter(x=>x.status==='unpaid');
+    const plates=cars.map(c=>normPlate(c.plate)),hits=bq.docs.map(d=>({id:d.id,...d.data()})).filter(b=>b.status==='active'&&b.kind==='Vehicle'&&plates.includes(normPlate(b.subject)));
+    const wars=wq?wq.docs.map(d=>({id:d.id,...d.data()})).filter(wActive):[];
+    const owner=(cars[0]&&cars[0].ownerName)||'Citizen';
+    box.innerHTML=`<div class="panel"><h3>${esc(owner)}</h3><p class="sub" style="margin:0">Discord ID ${esc(id)}${plate?' &middot; found by plate <b>'+esc(plate)+'</b>':''}</p></div>
+      ${wars.length?`<div class="panel alert"><h3>Active warrant</h3>${wars.map(w=>`<p class="sub" style="margin:0 0 .4em"><b>${esc(w.type)}</b>: ${esc(w.reason)} (requested by ${esc(w.requested_name||'')})</p>`).join('')}</div>`:''}
+      ${hits.length?`<div class="panel alert"><h3>Active BOLO</h3>${hits.map(b=>`<p class="sub" style="margin:0 0 .4em">${esc(b.subject)}: ${esc(b.details||'no details')} (by ${esc(b.by_name||'')})</p>`).join('')}</div>`:''}
+      <div class="kpis"><div class="kpi"><div class="lbl">Driver license</div><div class="big ${licOn?'good':'badc'}">${licOn?'Active':'Inactive'}</div><div class="mu">${lic&&lic.note?esc(lic.note):licOn?'valid to drive':'not allowed to drive'}</div></div>
+        <div class="kpi"><div class="lbl">Vehicles</div><div class="big">${cars.length}</div><div class="mu">registered</div></div>
+        <div class="kpi"><div class="lbl">Unpaid tickets</div><div class="big ${open.length?'badc':''}">${open.length}</div><div class="mu">${open.length?esc(SB(open.reduce((s,x)=>s+(Number(x.amount)||0),0)))+' owed':'none'}</div></div>
+        <div class="kpi"><div class="lbl">Warrants</div><div class="big ${wars.length?'badc':'good'}">${wars.length?'Active':'None'}</div><div class="mu">${wars.length?wars.length+' active':'no active warrant'}</div></div>
+        <div class="kpi"><div class="lbl">BOLO</div><div class="big ${hits.length?'badc':'good'}">${hits.length?'Flagged':'Clear'}</div><div class="mu">${hits.length?hits.length+' active':'no active BOLO'}</div></div></div>
+      <div class="cols"><div class="panel"><h3>Vehicles</h3><table class="tbl"><tr><th>Plate</th><th>Type</th><th>Vehicle</th><th>Registration</th></tr>${cars.map(c=>`<tr><td><b>${esc(c.plate)}</b></td><td>${esc(c.type)}</td><td>${esc(c.make)} ${esc(c.model)}${c.color?'<br><span class="mu">'+esc(c.color)+'</span>':''}</td><td>${vtag(c)}</td></tr>`).join('')||'<tr><td colspan="4" class="mu">No vehicles registered.</td></tr>'}</table></div>
+       <div class="panel"><h3>Recent tickets</h3><table class="tbl"><tr><th>Reason</th><th>Amount</th><th>Status</th></tr>${tx.slice(0,6).map(x=>`<tr><td>${esc(x.reason)}</td><td>${esc(SB(x.amount))}</td><td><span class="tag ${x.status==='paid'?'g':x.status==='void'?'':'a'}">${esc(x.status)}</span></td></tr>`).join('')||'<tr><td colspan="3" class="mu">No tickets.</td></tr>'}</table></div></div>
+      ${S.police||S.staff?`<div class="panel" style="margin-top:1.2em"><h3>Issue a citation</h3><p class="sub">Adds a ticket the person pays from their bank (up to 25,000 SB). Uses the duty PIN at the top right.</p>
+        <div class="row"><div><label>Reason *</label><input id="ci_reason" maxlength="200" placeholder="e.g. Running a red light"></div><div><label>Amount (SB) *</label><input id="ci_amt" inputmode="numeric"></div></div>
+        <p><button class="btn" onclick="citeUser('${safeId(id)}')">Issue citation</button></p></div>`:''}`;
+  }catch(e){box.innerHTML=`<div class="panel"><p class="mu" style="margin:0">Could not look up: ${esc(e&&e.code==='permission-denied'?'publish the newest Firestore rules':(e&&e.message)||'error')}</p></div>`}
+}
+async function citeUser(id){
+  const a=amt($('#ci_amt').value),reason=($('#ci_reason').value||'').trim().slice(0,200);
+  if(!a||a>25000)return say('Enter an amount from 1 to 25,000');if(!reason)return say('Enter the reason');
+  if(!confirm('Issue a citation of '+SB(a)+' to '+id+'?'))return;
+  const tid=newId('tickets');
+  try{await erWrite('e_t_'+tid,b=>b.set(db.collection('tickets').doc(tid),{to:id,by:S.user.id,by_name:S.user.name.slice(0,80),reason,amount:a,created:Date.now(),status:'unpaid',source:'er'}));
+    say('Citation issued.');showPerson(id,'')}catch(e){say(e.message||fe(e))}
+}
+
+// ---------- BOLOs ----------
+async function loadBolos(box){
+  const q=await db.collection('bolos').orderBy('created','desc').limit(60).get();
+  const rows=q.docs.map(d=>({id:d.id,...d.data()})),act=rows.filter(b=>b.status==='active'),old=rows.filter(b=>b.status!=='active').slice(0,6);
+  box.innerHTML=`<div class="panel"><div class="hl"><h3>Active BOLOs (${act.length})</h3><span class="mu" style="font-size:.85em">Refreshes every 15 seconds</span></div>
+    <table class="tbl"><tr><th>Type</th><th>Subject</th><th>Details</th><th>By</th><th>Posted</th><th></th></tr>${act.map(b=>`<tr><td><span class="tag ${b.kind==='Vehicle'?'p':'e'}">${esc(b.kind)}</span></td><td><b>${esc(b.subject)}</b></td><td>${esc(b.details||'')}</td><td>${esc(b.by_name||'')}</td><td class="mu">${ago(b.created)}</td><td style="text-align:right"><button class="btn s" onclick="clearBolo('${safeId(b.id)}')">Clear</button></td></tr>`).join('')||'<tr><td colspan="6" class="mu">No active BOLOs.</td></tr>'}</table></div>
+    ${old.length?`<div class="panel"><h3>Recently cleared</h3><table class="tbl"><tr><th>Type</th><th>Subject</th><th>Posted</th></tr>${old.map(b=>`<tr><td>${esc(b.kind)}</td><td>${esc(b.subject)}</td><td class="mu">${ago(b.created)}</td></tr>`).join('')}</table></div>`:''}`;
+}
+async function newBolo(){
+  const kind=$('#bo_kind').value,sub=$('#bo_sub').value.trim(),det=$('#bo_det').value.trim();
+  if(!sub)return say('Enter the plate or a description');
+  const bid=newId('bolos');
+  try{await erWrite('e_b_'+bid,b=>b.set(db.collection('bolos').doc(bid),{kind,subject:sub.slice(0,80),details:det.slice(0,200),status:'active',by:S.user.id,by_name:S.user.name.slice(0,80),created:Date.now()}));say('BOLO added.');er()}catch(e){say(e.message||fe(e))}
+}
+async function clearBolo(id){
+  if(!id)return;
+  try{await erWrite('e_b_'+id,b=>b.update(db.collection('bolos').doc(id),{status:'cleared',cleared_by:S.user.name.slice(0,80),updated:Date.now()}));say('BOLO cleared.');erLoad()}catch(e){say(e.message||fe(e))}
+}
+
+// =====================================================================
+// CIVILIAN 911: shown on the citizen Portal, lands in the Dispatch list
+// =====================================================================
+function sosBody(sos,on,warn){
+  const note=sos&&!on?`<p class="mu" style="margin:0 0 1em">Your last request was ${esc(String(sos.status).toLowerCase())}.</p>`:'';
+  if(on)return warn+`<div class="panel alert"><h3>Help has been requested</h3><p class="sub">Dispatch can see your request. Stay safe, and stay where you are if you can.</p>
+    <table class="tbl"><tr><th>Service</th><th>Location</th><th>What is happening</th><th>Status</th><th>Responding</th></tr><tr><td>${dtag(sos.type)}</td><td>${esc(sos.location)}</td><td>${esc(sos.details)}</td><td>${stag(sos.status)}</td><td>${(sos.units||[]).map(u=>`<span class="tag p">${esc(u)}</span>`).join(' ')||'<span class="mu">waiting for a unit</span>'}</td></tr></table>
+    <p style="margin-top:1em"><button class="btn s" onclick="cancelSOS()">Cancel request</button> <span class="mu">This page updates every 10 seconds.</span></p></div>`;
+  return warn+`<div class="panel alert"><h3>Call emergency services</h3><p class="sub">Send a request to police, EMS or fire dispatch. Only use this for real emergencies in the roleplay. Misuse can get you banned.</p>${note}
+    <div class="row"><div><label>Who do you need? *</label><select id="sos_type"><option>Police</option><option>EMS</option><option>Fire</option></select></div><div><label>Where are you? *</label><input id="sos_loc" maxlength="80" placeholder="e.g. Main St &amp; 4th Ave"></div></div>
+    <label>What is happening? *</label><input id="sos_det" maxlength="200" placeholder="e.g. My car crashed and someone is hurt">
+    <label style="display:flex;gap:10px;align-items:flex-start;text-transform:none;letter-spacing:0;font-size:.9rem"><input id="sos_danger" type="checkbox" style="width:auto;margin-top:3px"><span>Someone is in immediate danger</span></label>
+    <p><button class="btn" onclick="sendSOS()">Send emergency request</button></p></div>`;
+}
+async function sendSOS(){
+  const type=$('#sos_type').value,loc=$('#sos_loc').value.trim(),det=$('#sos_det').value.trim(),danger=$('#sos_danger').checked;
+  if(!loc||!det)return say('Enter where you are and what is happening');
+  try{const u=await authed(),now=Date.now();
+    await db.collection('emergency').doc(u.uid).set({type,priority:danger?1:2,location:loc.slice(0,80),details:det.slice(0,200),status:'Pending',units:[],callerId:S.user.id,callerName:S.user.name.slice(0,80),created:now,updated:now});
+    say('Your request was sent. Dispatch can see it now.');PT_TAB='sos';portal()}
+  catch(e){say(e&&e.code==='permission-denied'?'Blocked. You may already have an active request, or the database rules need to be published.':(e.message||fe(e)))}
+}
+async function cancelSOS(){
+  if(!confirm('Cancel your emergency request?'))return;
+  try{const u=await authed();await db.collection('emergency').doc(u.uid).update({status:'Cancelled',updated:Date.now()});say('Request cancelled.');portal()}
+  catch(e){say(e&&e.code==='permission-denied'?'Blocked by the database rules.':(e.message||fe(e)))}
+}
+
+// staff review links in Staff mode open the normal Chain Servers page (Staff mode only has Console + Terms)
+function openChains(){MODE='std';try{localStorage.setItem('ros_mode','std')}catch{}tab='chains';draft.tab='chains';say('');render();scrollTo(0,0)}
 
 init();
