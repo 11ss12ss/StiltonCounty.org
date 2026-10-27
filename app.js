@@ -102,6 +102,7 @@ async function init(){
   watchBan(u&&u.id);
   watchSite();
   startPresence();
+  try{initLawBot()}catch{}
   try{resumeDuty()}catch{}
   setTimeout(()=>{try{if(!BANNED&&!DOWN&&isCivilian()&&!tutSeen())startIntro()}catch{}},500);
 }
@@ -240,7 +241,14 @@ function home(){
     <p class="mu"><i>United in governance, Freedom in communities.</i></p></div>`;
 }
 
-let PIN='';const pin=()=>PIN;
+let PIN=(()=>{try{return sessionStorage.getItem('ros_spin')||''}catch{return ''}})(),UNLOCKED=false;const pin=()=>PIN;
+const setPin=v=>{PIN=String(v||'').trim();if(!PIN)UNLOCKED=false;try{PIN?sessionStorage.setItem('ros_spin',PIN):sessionStorage.removeItem('ros_spin')}catch{};pinChip()};
+const pinChip=()=>{const c=$('#pinchip');if(c){c.textContent=UNLOCKED?'PIN unlocked':'PIN locked';c.className='st-stat '+(UNLOCKED?'':'bad')}};
+async function unlockStaff(){
+  const p=((($('#b_pin')||{}).value)||PIN).trim();if(!p)return say('Type the staff PIN first');
+  try{await authed();const ref=db.collection('proofs').doc('k_'+Date.now());await ref.set({pin:p});await ref.delete().catch(()=>{});setPin(p);UNLOCKED=true;pinChip();say('Staff PIN accepted. You are unlocked.')}
+  catch(e){UNLOCKED=false;setPin('');const i=$('#b_pin');if(i)i.value='';say(e&&e.code==='permission-denied'?'That staff PIN is wrong. Try again.':(e.message||fe(e)))}
+}
 // Staff actions are checked by the database rules: the staff PIN must be sent along with the change.
 async function staffWrite(id,fn){
   let p=(($('#b_pin')&&$('#b_pin').value)||PIN).trim();
@@ -248,9 +256,9 @@ async function staffWrite(id,fn){
   if(!p)throw new Error('Enter the staff PIN first');
   const ref=db.collection('proofs').doc(id);
   // step 1: check the PIN on its own, so a wrong PIN can be told apart from a blocked change
-  try{await ref.set({pin:p})}catch(e){if(e&&e.code==='permission-denied'){PIN='';throw new Error('Staff PIN rejected. Check it and try again.')}throw e}
+  try{await ref.set({pin:p})}catch(e){if(e&&e.code==='permission-denied'){setPin('');throw new Error('Staff PIN rejected. Check it and try again.')}throw e}
   await ref.delete().catch(()=>{}); // no leftover proof, so it cannot be reused
-  PIN=p;
+  setPin(p);UNLOCKED=true;
   // step 2: the real change, sent together with the PIN proof
   const b=db.batch();b.set(ref,{pin:p});fn(b);
   try{await b.commit()}
@@ -327,13 +335,14 @@ async function mod(){
   try{pend=(await db.collection('chains').get()).docs.filter(d=>{const r=d.data().review;return r==='pending'||!r}).length}catch{}
   let regPend=0;try{await authed();regPend=(await db.collection('vehicles').where('status','==','pending').get()).size}catch{}
   const down=!!(SITE&&SITE.down);
-  const nav=[['over','Overview'],['look','Lookup'],['bank','Bank'],['tix','Tickets'],['lic','Licenses'],['reg','Registrations'],['bans','Bans'],['adm','Admins'],['site','Site']];
+  const nav=[['over','Overview'],['look','Lookup'],['bank','Bank'],['tix','Tickets'],['lic','Licenses'],['reg','Registrations'],['bans','Bans'],['adm','Admins'],['law','Laws'],['site','Site']];
   let adm=[];if(DT==='adm'){try{adm=(await db.collection('admins').get()).docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.created||0)-(a.created||0))}catch(e){say(e&&e.code==='permission-denied'?'Publish the newest rules':fe(e))}}
+  let laws=[];if(DT==='law'){try{laws=(await db.collection('laws').get()).docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(a.title).localeCompare(String(b.title)))}catch(e){say(e&&e.code==='permission-denied'?'Publish the newest rules':fe(e))}}
   let tix=[];if(DT==='tix'){try{await authed();tix=(await db.collection('tickets').orderBy('created','desc').limit(60).get()).docs.map(d=>({id:d.id,...d.data()}))}catch(e){say(e&&e.code==='permission-denied'?'Publish the newest rules':fe(e))}}
   let lics=[],vehs=[];if(DT==='lic'||DT==='reg'){try{await authed();[lics,vehs]=await Promise.all([db.collection('licenses').get().then(q=>q.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.updated||0)-(a.updated||0))),db.collection('vehicles').orderBy('created','desc').limit(100).get().then(q=>q.docs.map(d=>({id:d.id,...d.data()})))])}catch(e){say(e&&e.code==='permission-denied'?'Publish the newest rules':fe(e))}}
   const head=`<div class="st-head"><div class="st-title"><h2>Staff Console</h2><span>Republic of Stilton</span></div>
     <div class="st-tabs">${nav.map(([k,l])=>`<button class="${DT===k?'on':''}" onclick="dashTab('${k}')">${l}${k==='bans'?`<b>${list.length}</b>`:k==='reg'&&regPend?`<b>${regPend}</b>`:''}</button>`).join('')}</div>
-    <div class="st-r"><span class="st-stat ${down?'bad':''}">${down?'Site shut down':'Site operational'}</span><input id="b_pin" type="password" placeholder="Staff PIN" title="Staff PIN, used for every action" name="ros-staff-pin" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" oninput="PIN=this.value.trim()" value="${esc(pin())}"></div></div>`;
+    <div class="st-r"><span class="st-stat ${down?'bad':''}">${down?'Site shut down':'Site operational'}</span><span id="pinchip" class="st-stat ${UNLOCKED?'':'bad'}">${UNLOCKED?'PIN unlocked':'PIN locked'}</span><input id="b_pin" type="password" placeholder="Staff PIN" title="Staff PIN, used for every action" name="ros-staff-pin" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" oninput="setPin(this.value)" onkeydown="if(event.key==='Enter')unlockStaff()" value="${esc(pin())}"><button class="btn" type="button" onclick="unlockStaff()">Unlock</button></div></div>`;
   let body='';
   if(DT==='over')body=`<div class="panel" id="health"></div>
     <div class="kpis">
@@ -370,6 +379,7 @@ async function mod(){
     <div class="row"><div><label>Discord user ID *</label><input id="ad_id" inputmode="numeric" placeholder="e.g. 123456789012345678"></div><div><label>Name or note</label><input id="ad_name" maxlength="80" placeholder="e.g. Jordan"></div></div>
     <p><button class="btn" onclick="addAdmin()">Give admin</button></p></div>
     <div class="panel"><h3>Admins added here (${adm.length})</h3><table class="tbl"><tr><th>User</th><th>Added by</th><th>When</th><th></th></tr>${adm.map(x=>`<tr><td><b>${esc(x.name||'—')}</b><br><span class="mu">${esc(x.id)}</span></td><td>${esc(x.by_name||'')}</td><td class="mu">${esc(new Date(x.created||0).toLocaleString())}</td><td style="text-align:right"><button class="btn s" onclick="removeAdmin('${safeId(x.id)}')">Remove</button></td></tr>`).join('')||'<tr><td class="mu" colspan="4">Nobody added yet. Staff-role members on Discord are not listed here.</td></tr>'}</table></div>`;
+  else if(DT==='law')body=lawsPanel(laws);
   else if(DT==='lic')body=licPanel(lics);
   else if(DT==='reg')body=regPanel(vehs,lics);
   else if(DT==='bans')body=`<div class="panel"><h3>Ban a user</h3><p class="sub">Banning someone also bans every device they have logged in from. Uses the staff PIN at the top right.</p>
@@ -1111,7 +1121,7 @@ async function loadWarrants(box){
   const q=await db.collection('warrants').orderBy('created','desc').limit(80).get(),rows=q.docs.map(d=>({id:d.id,...d.data()}));
   const pend=rows.filter(w=>w.status==='pending'),act=rows.filter(wActive),rest=rows.filter(w=>!pend.includes(w)&&!act.includes(w)).slice(0,10),rv=S.staff||S.judge;
   const th='<tr><th>Type</th><th>Subject</th><th>Reason</th><th>Requested by</th><th>Status</th><th></th></tr>';
-  box.innerHTML=`${rv?`<div class="panel"><h3>Reviewer sign-off</h3><p class="sub">Approve or deny warrant requests. This needs the staff (reviewer) PIN. Approved warrants expire after 7 days.</p><input id="b_pin" type="password" placeholder="Reviewer PIN" name="ros-reviewer-pin" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" oninput="PIN=this.value.trim()" value="${esc(pin())}" style="max-width:20em"></div>`:''}
+  box.innerHTML=`${rv?`<div class="panel"><h3>Reviewer sign-off</h3><p class="sub">Approve or deny warrant requests. This needs the staff (reviewer) PIN. Approved warrants expire after 7 days.</p><input id="b_pin" type="password" placeholder="Reviewer PIN" name="ros-reviewer-pin" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" oninput="setPin(this.value)" onkeydown="if(event.key==='Enter')unlockStaff()" value="${esc(pin())}" style="max-width:20em"></div>`:''}
     <div class="panel"><div class="hl"><h3>Waiting for review (${pend.length})</h3><span class="mu" style="font-size:.85em">Refreshes every 15 seconds</span></div><table class="tbl">${th}${pend.map(w=>wrow(w,'pend',rv)).join('')||'<tr><td colspan="6" class="mu">No warrant requests waiting.</td></tr>'}</table></div>
     <div class="panel"><h3>Active warrants (${act.length})</h3><table class="tbl">${th}${act.map(w=>wrow(w,'act',rv)).join('')||'<tr><td colspan="6" class="mu">No active warrants.</td></tr>'}</table></div>
     ${rest.length?`<div class="panel"><h3>Recently closed</h3><table class="tbl">${th}${rest.map(w=>wrow(w,'done',rv)).join('')}</table></div>`:''}`;
@@ -1204,6 +1214,170 @@ async function newBolo(){
 async function clearBolo(id){
   if(!id)return;
   try{await erWrite('e_b_'+id,b=>b.update(db.collection('bolos').doc(id),{status:'cleared',cleared_by:S.user.name.slice(0,80),updated:Date.now()}));say('BOLO cleared.');erLoad()}catch(e){say(e.message||fe(e))}
+}
+
+// ===== extra motion: page transitions, staggered rises, count-up numbers, hover lifts, pulses (all off for reduced-motion) =====
+(function(){
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+  const st=document.createElement('style');
+  st.textContent=`
+  body{transition:background-color .45s ease,color .45s ease}
+  #view.anim>.st>*,#view.anim>.card,#view.anim>.cgrid{animation:mFade .5s cubic-bezier(.2,.7,.2,1) both}
+  #view.anim .panel,#view.anim .kpi,#view.anim .st-head{animation:mRise .55s cubic-bezier(.2,.7,.2,1) both}
+  #view.anim .kpis .kpi:nth-child(2){animation-delay:.06s}#view.anim .kpis .kpi:nth-child(3){animation-delay:.12s}
+  #view.anim .kpis .kpi:nth-child(4){animation-delay:.18s}#view.anim .kpis .kpi:nth-child(5){animation-delay:.24s}
+  #view.anim .panel{animation-delay:.08s}#view.anim .panel~.panel{animation-delay:.16s}#view.anim .panel~.panel~.panel{animation-delay:.24s}
+  #view.anim .tbl tr{animation:mRow .4s ease both}
+  #view.anim .tbl tr:nth-child(2){animation-delay:.12s}#view.anim .tbl tr:nth-child(3){animation-delay:.17s}#view.anim .tbl tr:nth-child(4){animation-delay:.22s}
+  #view.anim .tbl tr:nth-child(5){animation-delay:.27s}#view.anim .tbl tr:nth-child(n+6){animation-delay:.32s}
+  .btn,.st-tabs button,.acts button,.modebtn{transition:transform .15s ease,box-shadow .2s ease,background-color .2s ease,border-color .2s ease,color .2s ease}
+  .btn:hover,.acts button:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(0,0,0,.35)}
+  .btn:active,.acts button:active,.st-tabs button:active,.modebtn:active{transform:translateY(0) scale(.96);box-shadow:none}
+  .st-tabs button:hover{transform:translateY(-1px)}
+  .kpi{transition:transform .2s ease,box-shadow .2s ease,background-color .2s ease}
+  .kpi.click:hover{transform:translateY(-3px);box-shadow:0 8px 20px rgba(0,0,0,.35)}
+  .tbl tr{transition:background-color .18s ease}.tbl tr:hover td{background:rgba(255,255,255,.035)}
+  .panel.alert{animation:mGlow 2.8s ease-in-out infinite}
+  .st-stat:not(.bad){position:relative}
+  .st-stat:not(.bad)::before{content:"";display:inline-block;width:.55em;height:.55em;margin-right:.45em;border-radius:50%;background:#7ee2a1;animation:mPulse 1.8s ease-out infinite;vertical-align:baseline}
+  #msg:not(.hide){animation:mToast .4s cubic-bezier(.2,.9,.3,1.2) both}
+  #modemenu{animation:mPop .22s cubic-bezier(.2,.9,.3,1.2) both;transform-origin:top right}
+  .spin{animation-duration:.8s}
+  body.m-er header::after{animation:mLights 6s linear infinite}
+  @keyframes mFade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  @keyframes mRise{from{opacity:0;transform:translateY(16px) scale(.985)}to{opacity:1;transform:none}}
+  @keyframes mRow{from{opacity:0;transform:translateX(-10px)}to{opacity:1;transform:none}}
+  @keyframes mGlow{0%,100%{box-shadow:0 0 0 0 rgba(255,90,90,0)}50%{box-shadow:0 0 18px 0 rgba(255,90,90,.28)}}
+  @keyframes mPulse{0%{box-shadow:0 0 0 0 rgba(126,226,161,.7)}100%{box-shadow:0 0 0 .7em rgba(126,226,161,0)}}
+  @keyframes mToast{from{opacity:0;transform:translateY(-10px) scale(.97)}to{opacity:1;transform:none}}
+  @keyframes mPop{from{opacity:0;transform:translateY(-6px) scale(.95)}to{opacity:1;transform:none}}
+  @keyframes mLights{from{background-position:0 0}to{background-position:200px 0}}`;
+  document.head.appendChild(st);
+  const view=document.getElementById('view');if(!view)return;
+  let t=null;
+  const countUp=()=>view.querySelectorAll('.kpi .big').forEach(el=>{
+    const txt=el.textContent.trim();if(!/^\d{1,6}$/.test(txt)||el.children.length)return;
+    const end=+txt,t0=performance.now(),dur=650;if(end<2)return;
+    const tick=n=>{const p=Math.min(1,(n-t0)/dur);el.textContent=Math.round(end*(1-Math.pow(1-p,3)));if(p<1)requestAnimationFrame(tick);else el.textContent=txt};
+    el.textContent='0';requestAnimationFrame(tick)});
+  const play=()=>{view.classList.add('anim');clearTimeout(t);t=setTimeout(()=>view.classList.remove('anim'),1100);countUp()};
+  new MutationObserver(ms=>{
+    for(const m of ms){
+      const big=m.target===view||m.target.id==='pbody';
+      const wasLoading=[...m.removedNodes].some(n=>n.nodeType===1&&(n.classList.contains('loader')||n.querySelector&&n.querySelector('.loader')));
+      if((big&&m.addedNodes.length)||(wasLoading&&m.addedNodes.length)){play();break}}
+  }).observe(view,{childList:true,subtree:true});
+})();
+
+// =====================================================================
+// LAW BOT: bottom-left helper that answers "is this legal?" from the laws staff enter in the Laws tab
+// (plain keyword matching against the laws collection, not an AI: it only knows what staff wrote)
+// =====================================================================
+let LAWS=null,LAWT=0;
+const LVERD={illegal:{t:'Illegal',c:'#ff8a8a',i:'⛔'},legal:{t:'Legal',c:'#7ee2a1',i:'✅'},restricted:{t:'Legal with conditions',c:'#ffb86b',i:'⚠️'},depends:{t:'It depends',c:'#7aa7ff',i:'❓'}};
+async function loadLaws(force){
+  if(LAWS&&!force&&Date.now()-LAWT<60000)return LAWS;
+  const q=await db.collection('laws').get();
+  LAWS=q.docs.map(d=>({id:d.id,...d.data()}));LAWT=Date.now();return LAWS;
+}
+const LSTOP=new Set('a an the is are was be been am it its in on at to of for and or but if so do does did can could should would may might will shall i me my we our you your they them their he she his her this that these those there here with without about what whats how when where why who whom any anyone someone is it legal illegal allowed allow ok okay permitted permit law laws rule rules able get have has had just really very much many some'.split(' '));
+const lstem=w=>w.replace(/(ing|ed|es|s)$/,m=>w.length>4?'':m);
+const ltok=s=>String(s||'').toLowerCase().replace(/[^a-z0-9\s]/g,' ').split(/\s+/).filter(w=>w&&!LSTOP.has(w)&&w.length>1).map(lstem);
+function lawScore(q,l){
+  const qs=new Set(q);let sc=0;
+  const strong=new Set([...ltok(l.title),...ltok(l.keywords)]),weak=new Set(ltok(l.details));
+  qs.forEach(w=>{if(strong.has(w))sc+=3;else if(weak.has(w))sc+=1});
+  const kw=String(l.keywords||'').toLowerCase().split(',').map(x=>x.trim()).filter(Boolean);
+  const raw=' '+q.join(' ')+' ';kw.forEach(k=>{const kt=ltok(k).join(' ');if(kt&&raw.includes(' '+kt+' '))sc+=4});   // a whole keyword phrase appearing is a strong hit
+  return sc;
+}
+function lawAnswer(question,laws){
+  const t=question.toLowerCase();
+  if(!laws.length)return{html:'<p style="margin:0">No laws have been added yet. Ask a staff member on Discord.</p>'};
+  if(/\b(list|all|every|show)\b.*\blaws?\b|\bwhat laws\b|\bwhich laws\b/.test(t))
+    return{html:'<p style="margin:0 0 .4em"><b>Laws I know about:</b></p><ul style="margin:0;padding-left:1.1em">'+laws.map(l=>`<li>${esc(l.title)} <span style="color:${(LVERD[l.verdict]||LVERD.depends).c}">(${esc((LVERD[l.verdict]||LVERD.depends).t)})</span></li>`).join('')+'</ul>'};
+  const q=ltok(question);if(!q.length)return{html:'<p style="margin:0">Ask me about an action, like <i>"Is speeding illegal?"</i> or <i>"Can I carry a weapon?"</i></p>'};
+  const ranked=laws.map(l=>({l,s:lawScore(q,l)})).filter(x=>x.s>=3).sort((a,b)=>b.s-a.s);
+  if(!ranked.length)return{html:'<p style="margin:0">I could not find a law that covers that. Try different words, type <b>list laws</b>, or ask a staff member on Discord.</p>'};
+  const top=ranked[0].s,hits=ranked.filter(x=>x.s>=top*0.6).slice(0,3);
+  return{html:hits.map(({l})=>{const v=LVERD[l.verdict]||LVERD.depends;
+    return `<div style="border-left:3px solid ${v.c};padding:.1em 0 .1em .7em;margin:0 0 .8em"><div style="font-weight:700">${v.i} ${esc(v.t)}: ${esc(l.title)}</div>${l.details?`<div style="margin:.3em 0">${esc(l.details)}</div>`:''}${l.penalty?`<div class="mu" style="font-size:.9em">Penalty: ${esc(l.penalty)}</div>`:''}</div>`}).join('')+'<p class="mu" style="margin:0;font-size:.8em">This is only a guide based on the laws staff have written down. Staff and police make the final call.</p>'};
+}
+function initLawBot(){
+  if(document.getElementById('lawbot')||BANNED)return;
+  const st=document.createElement('style');
+  st.textContent=`
+  #lawbtn{position:fixed;left:16px;bottom:16px;z-index:900;display:flex;align-items:center;gap:8px;background:var(--red,#e11d2e);color:#fff;border:0;border-radius:999px;padding:11px 16px;font-weight:700;font-size:.92rem;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.45);font-family:inherit;transition:transform .15s ease,box-shadow .2s ease}
+  #lawbtn:hover{transform:translateY(-2px)}#lawbtn:active{transform:scale(.96)}
+  body.m-staff #lawbtn{background:#2c58b0}body.m-er #lawbtn{background:#c81e1e}
+  #lawbox{position:fixed;left:16px;bottom:70px;z-index:900;width:min(370px,calc(100vw - 32px));height:min(520px,calc(100vh - 110px));display:none;flex-direction:column;background:var(--panel,#16305f);border:1px solid var(--bd,#2d4f94);border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.6);overflow:hidden}
+  #lawbox.open{display:flex;animation:lbIn .25s cubic-bezier(.2,.9,.3,1.1) both;transform-origin:bottom left}
+  #lawbox .lh{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid var(--bd,#2d4f94);font-weight:700}
+  #lawbox .lh button{background:none;border:0;color:var(--mu,#9fb0d0);font-size:1.3rem;cursor:pointer;line-height:1}
+  #lawlog{flex:1;overflow-y:auto;padding:12px 14px;display:flex;flex-direction:column;gap:10px;font-size:.9rem}
+  #lawlog .bm{max-width:92%;padding:9px 12px;border-radius:12px;animation:lbMsg .25s ease both}
+  #lawlog .bm.bot{background:rgba(255,255,255,.06);align-self:flex-start;border-bottom-left-radius:4px}
+  #lawlog .bm.me{background:var(--red,#e11d2e);color:#fff;align-self:flex-end;border-bottom-right-radius:4px}
+  #lawchips{display:flex;gap:6px;flex-wrap:wrap;padding:0 14px 8px}
+  #lawchips button{background:rgba(255,255,255,.07);border:1px solid var(--bd,#2d4f94);color:inherit;border-radius:999px;padding:5px 10px;font-size:.78rem;cursor:pointer;font-family:inherit}
+  #lawchips button:hover{background:rgba(255,255,255,.14)}
+  #lawform{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--bd,#2d4f94)}
+  #lawform input{flex:1;min-width:0}
+  @keyframes lbIn{from{opacity:0;transform:translateY(12px) scale(.96)}to{opacity:1;transform:none}}
+  @keyframes lbMsg{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion:reduce){#lawbox.open,#lawlog .bm{animation:none}}`;
+  document.head.appendChild(st);
+  const w=document.createElement('div');w.id='lawbot';
+  w.innerHTML=`<button id="lawbtn" aria-label="Open the Law Bot" aria-expanded="false"><span aria-hidden="true">⚖️</span><span>Law Bot</span></button>
+   <div id="lawbox" role="dialog" aria-label="Law Bot"><div class="lh"><span>⚖️ Law Bot</span><button type="button" id="lawx" aria-label="Close">&times;</button></div>
+   <div id="lawlog" aria-live="polite"></div><div id="lawchips"></div>
+   <form id="lawform"><input id="lawq" maxlength="200" placeholder="Is it legal to&hellip;?" autocomplete="off"><button class="btn" type="submit">Ask</button></form></div>`;
+  document.body.appendChild(w);
+  const log=w.querySelector('#lawlog'),box=w.querySelector('#lawbox'),btn=w.querySelector('#lawbtn'),inp=w.querySelector('#lawq');
+  const add=(cls,html)=>{const d=document.createElement('div');d.className='bm '+cls;d.innerHTML=html;log.appendChild(d);log.scrollTop=log.scrollHeight;return d};
+  let started=false;
+  const toggle=on=>{box.classList.toggle('open',on);btn.setAttribute('aria-expanded',on);
+    if(on&&!started){started=true;add('bot','Hi! I know the laws of the Republic of Stilton that staff have written down. Ask me if something is legal, like <i>"Can I speed?"</i>');
+      loadLaws().then(ls=>{const c=w.querySelector('#lawchips');c.innerHTML=ls.slice(0,4).map(l=>`<button type="button">Is ${esc(l.title)} legal?</button>`).join('')+(ls.length?'<button type="button">List laws</button>':'');
+        c.querySelectorAll('button').forEach(b=>b.onclick=()=>ask(b.textContent))}).catch(()=>{})}
+    if(on)setTimeout(()=>inp.focus(),50)};
+  async function ask(text){
+    text=String(text||'').trim().slice(0,200);if(!text)return;
+    add('me',esc(text));inp.value='';const th=add('bot','<span class="mu">Checking the laws&hellip;</span>');
+    try{const ls=await loadLaws(true);th.innerHTML=lawAnswer(text,ls).html}
+    catch(e){th.innerHTML='<span class="mu">I could not load the laws right now'+(e&&e.code==='permission-denied'?' (staff need to publish the newest rules)':'')+'.</span>'}
+    log.scrollTop=log.scrollHeight}
+  btn.onclick=()=>toggle(!box.classList.contains('open'));w.querySelector('#lawx').onclick=()=>toggle(false);
+  w.querySelector('#lawform').onsubmit=e=>{e.preventDefault();ask(inp.value)};
+  addEventListener('keydown',e=>{if(e.key==='Escape'&&box.classList.contains('open'))toggle(false)});
+}
+
+// ---------- staff: Laws tab ----------
+const LVERDICTS=[['illegal','Illegal'],['legal','Legal'],['restricted','Legal with conditions (permit, license, etc.)'],['depends','It depends']];
+function lawsPanel(laws){
+  window.__laws={};laws.forEach(l=>window.__laws[l.id]=l);
+  return `<div class="panel"><h3>Law Bot: add or edit a law</h3><p class="sub">The Law Bot (bottom-left of the site) reads these entries to tell people whether something is legal. Put the words people would use in <b>Keywords</b>, for example <i>speeding, speed, going too fast</i>. Uses the staff PIN at the top right.</p>
+    <input type="hidden" id="lw_id">
+    <div class="row"><div><label>Law name *</label><input id="lw_title" maxlength="80" placeholder="e.g. Speeding"></div><div><label>Verdict *</label><select id="lw_verdict">${LVERDICTS.map(([k,l])=>`<option value="${k}">${esc(l)}</option>`).join('')}</select></div></div>
+    <div class="row"><div><label>Keywords (comma separated)</label><input id="lw_kw" maxlength="200" placeholder="e.g. speeding, speed, too fast"></div><div><label>Penalty</label><input id="lw_pen" maxlength="120" placeholder="e.g. 500 SB fine"></div></div>
+    <label>What the bot should say *</label><textarea id="lw_det" rows="3" maxlength="600" placeholder="e.g. Driving more than 20 over the posted limit is illegal."></textarea>
+    <p><button class="btn" onclick="saveLaw()">Save law</button> <button class="btn s" onclick="clearLawForm()">Clear</button></p></div>
+    <div class="panel"><h3>Laws the bot knows (${laws.length})</h3><table class="tbl"><tr><th>Law</th><th>Verdict</th><th>Penalty</th><th>Keywords</th><th></th></tr>${laws.map(l=>{const v=LVERD[l.verdict]||LVERD.depends;return `<tr><td><b>${esc(l.title)}</b><br><span class="mu">${esc((l.details||'').slice(0,90))}</span></td><td><span style="color:${v.c};font-weight:700">${esc(v.t)}</span></td><td>${esc(l.penalty||'')}</td><td class="mu">${esc(l.keywords||'')}</td><td style="text-align:right;white-space:nowrap"><button class="btn s" onclick="editLaw('${safeId(l.id)}')">Edit</button> <button class="btn s" onclick="delLaw('${safeId(l.id)}')">Delete</button></td></tr>`}).join('')||'<tr><td colspan="5" class="mu">No laws yet. Add the first one above.</td></tr>'}</table></div>`;
+}
+function clearLawForm(){['lw_id','lw_title','lw_kw','lw_pen','lw_det'].forEach(i=>{const e=$('#'+i);if(e)e.value=''});const v=$('#lw_verdict');if(v)v.value='illegal'}
+function editLaw(id){const l=(window.__laws||{})[id];if(!l)return;
+  $('#lw_id').value=id;$('#lw_title').value=l.title||'';$('#lw_verdict').value=l.verdict||'depends';$('#lw_kw').value=l.keywords||'';$('#lw_pen').value=l.penalty||'';$('#lw_det').value=l.details||'';
+  $('#lw_title').scrollIntoView({behavior:'smooth',block:'center'})}
+async function saveLaw(){
+  const title=$('#lw_title').value.trim(),details=$('#lw_det').value.trim(),verdict=$('#lw_verdict').value;
+  if(!title||!details)return say('Enter the law name and what the bot should say');
+  const id=$('#lw_id').value||newId('laws');
+  try{await staffWrite('n_'+id,b=>b.set(db.collection('laws').doc(id),{title:title.slice(0,80),verdict,keywords:$('#lw_kw').value.trim().slice(0,200),penalty:$('#lw_pen').value.trim().slice(0,120),details:details.slice(0,600),by_name:S.user.name.slice(0,80),updated:Date.now()}));
+    LAWS=null;say('Law saved. The Law Bot knows it now.');mod()}catch(e){say(e.message||fe(e))}
+}
+async function delLaw(id){
+  if(!confirm('Delete this law?'))return;
+  try{await staffWrite('n_'+id,b=>b.delete(db.collection('laws').doc(id)));LAWS=null;say('Law deleted.');mod()}catch(e){say(e.message||fe(e))}
 }
 
 // staff review links in Staff mode open the normal Chain Servers page (Staff mode only has Console + Terms)
