@@ -1,5 +1,5 @@
 // ===== CONFIG =====
-const CFG={DISCORD_CLIENT_ID:'1542247332899455006',GUILD_ID:'1462548365907722252',POLICE_ROLE_ID:'1554679644102332506',STAFF_ROLE_ID:'1554679627342159922',JOIN_URL:'',EMERGENCY_ROLE_IDS:[],JUDGE_ROLE_IDS:[],EMS_ROLE_IDS:[]}; // EMERGENCY_ROLE_IDS = extra Discord role IDs (EMT, Fire, Dispatch...) that may use Emergency Response mode; POLICE_ROLE_ID is always allowed. JUDGE_ROLE_IDS = roles that may approve or deny warrant requests (staff always can). EMS_ROLE_IDS = confirmed EMS role(s): they can use Emergency Response mode. JOIN_URL = your main Discord invite link (optional)
+const CFG={DISCORD_CLIENT_ID:'1542247332899455006',GUILD_ID:'1462548365907722252',POLICE_ROLE_ID:'1554679644102332506',STAFF_ROLE_ID:'1554679627342159922',JOIN_URL:'',LAW_AI_URL:'',EMERGENCY_ROLE_IDS:[],JUDGE_ROLE_IDS:[],EMS_ROLE_IDS:[]}; // EMERGENCY_ROLE_IDS = extra Discord role IDs (EMT, Fire, Dispatch...) that may use Emergency Response mode; POLICE_ROLE_ID is always allowed. JUDGE_ROLE_IDS = roles that may approve or deny warrant requests (staff always can). EMS_ROLE_IDS = confirmed EMS role(s): they can use Emergency Response mode. JOIN_URL = your main Discord invite link (optional)
 // Firebase web config (public by design; access is controlled by Firestore rules)
 firebase.initializeApp({apiKey:"AIzaSyAtjPX7727zNlvBh85jzTeAqPs5LfvuYr0",authDomain:"rossite.firebaseapp.com",projectId:"rossite",storageBucket:"rossite.firebasestorage.app",messagingSenderId:"812413188846",appId:"1:812413188846:web:a3e3d7e65697ff290c91ff"});
 const db=firebase.firestore();
@@ -1513,14 +1513,23 @@ function initLawBot(){
   document.body.appendChild(w);
   const log=w.querySelector('#lawlog'),box=w.querySelector('#lawbox'),btn=w.querySelector('#lawbtn'),inp=w.querySelector('#lawq');
   const add=(cls,html)=>{const d=document.createElement('div');d.className='bm '+cls;d.innerHTML=html;log.appendChild(d);log.scrollTop=log.scrollHeight;return d};
-  let started=false;
+  let started=false;const HIST=[];
   const toggle=on=>{box.classList.toggle('open',on);btn.setAttribute('aria-expanded',on);
     if(on&&!started){started=true;add('bot','Hi! I know the laws of the Republic of Stilton that staff have written down. Ask me if something is legal, like <i>"Can I speed?"</i>')}
     if(on)setTimeout(()=>inp.focus(),50)};
   async function ask(text){
     text=String(text||'').trim().slice(0,200);if(!text)return;
     add('me',esc(text));inp.value='';const th=add('bot','<span class="mu">Checking the laws&hellip;</span>');
-    try{const ls=await loadLaws(true);th.innerHTML=lawAnswer(text,ls).html}
+    try{const ls=await loadLaws(true);
+      const kw=lawAnswer(text,ls).html;let ai=null;
+      if(CFG.LAW_AI_URL){
+        try{const ac=new AbortController(),tm=setTimeout(()=>ac.abort(),20000);
+          const r=await fetch(CFG.LAW_AI_URL,{method:'POST',headers:{'Content-Type':'application/json'},signal:ac.signal,body:JSON.stringify({question:text,laws:LAWTEXT,history:HIST.slice(-4)})});
+          clearTimeout(tm);if(r.ok){const j=await r.json();if(j&&j.answer)ai=j}}catch(x){window.__aierr=String(x)}}
+      if(ai){const v=LVERD[ai.verdict==='unclear'?'info':ai.verdict]||LVERD.info,lab=ai.verdict==='unclear'?'Not clear':v.t;
+        th.innerHTML=`<div style="border-left:3px solid ${v.c};padding:.1em 0 .1em .7em"><div style="font-weight:700">${v.i} ${esc(lab)} <span class="tag" style="font-size:.7em;vertical-align:middle">AI</span></div><div style="margin:.3em 0">${esc(ai.answer)}</div></div><p class="mu" style="margin:.6em 0 0;font-size:.8em">AI-written guide based on the city laws. Staff and police make the final call.</p>`;
+        HIST.push({role:'user',text},{role:'assistant',text:ai.answer})}
+      else th.innerHTML=kw}
     catch(e){th.innerHTML='<span class="mu">I could not load the laws right now'+(e&&e.code==='permission-denied'?' (staff need to publish the newest rules)':'')+'.</span>'}
     log.scrollTop=log.scrollHeight}
   w.querySelectorAll('#lawchips button').forEach(b=>b.onclick=()=>ask(b.textContent));
