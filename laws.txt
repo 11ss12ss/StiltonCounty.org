@@ -150,5 +150,33 @@ Upon taking effect, this Constitution shall establish the foundational rules gov
 Section 3. Existing Laws
 Existing Stilton City Laws shall remain in effect to the extent that they do not conflict with this Constitution. Conflicting provisions must be reviewed and amended or repealed as appropriate.
 
+Article XIII - Criminal Code
+Section 1. Murder
+Murder, meaning intentionally killing another person, is illegal. Penalty: [PUT YOUR PENALTY HERE, for example 30 minutes jail and a 5,000 SB fine].
+Section 2. Assault
+Assault, meaning attacking or physically harming another person, is illegal. Penalty: [PUT YOUR PENALTY HERE].
+Section 3. Theft
+Theft, meaning stealing another person's property, is illegal. Penalty: [PUT YOUR PENALTY HERE].
+Section 4. Robbery
+Robbery, meaning taking property from a person by force or threat, is illegal. Penalty: [PUT YOUR PENALTY HERE].
+Section 5. Vehicle theft
+Stealing a vehicle is illegal. Penalty: [PUT YOUR PENALTY HERE].
+Section 6. Speeding
+Driving over the speed limit is illegal. Penalty: [PUT YOUR PENALTY HERE].
+Section 7. Reckless driving
+Driving recklessly or dangerously is illegal. Penalty: [PUT YOUR PENALTY HERE].
+Section 8. Driving without a license
+Driving with an inactive license is illegal. Penalty: [PUT YOUR PENALTY HERE].
+Section 9. Evading police
+Fleeing from or refusing to stop for police is illegal. Penalty: [PUT YOUR PENALTY HERE].
+Section 10. Carrying a weapon
+Carrying a weapon is allowed only with a weapons permit. Penalty for carrying without one: [PUT YOUR PENALTY HERE].
+Section 11. Trespassing
+Entering private property without permission is illegal. Penalty: [PUT YOUR PENALTY HERE].
+Section 12. Resisting arrest
+Resisting a lawful arrest is illegal. Penalty: [PUT YOUR PENALTY HERE].
+Section 13. Bribery
+Offering or taking a bribe from a public official is illegal. Penalty: [PUT YOUR PENALTY HERE].
+
 End of the Constitution of Stilton City
 All city laws, departments, and public officials are subordinate to this Constitution. No person is above the law.
