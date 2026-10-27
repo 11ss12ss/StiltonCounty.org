@@ -2,7 +2,8 @@
 // It keeps your Anthropic API key secret: the website sends the question here, and this sends it on to Claude.
 //
 // Settings to add in Cloudflare (Worker > Settings > Variables and Secrets):
-//   ANTHROPIC_API_KEY  (Secret)  your key from console.anthropic.com
+//   FREE option:  Bindings > Add > Workers AI, variable name  AI   (no key needed)
+//   PAID option:  ANTHROPIC_API_KEY  (Secret)  your key from console.anthropic.com  (used first if present)
 //   ALLOWED_ORIGIN     (Text)    https://stiltoncounty.org      <- your site, no trailing slash
 //
 const MODEL = 'claude-haiku-5-5';
@@ -45,14 +46,26 @@ ${laws}`;
     while (messages.length && messages[0].role !== 'user') messages.shift();
     messages.push({ role: 'user', content: question });
 
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: MODEL, max_tokens: 400, system, messages })
-    });
-    if (!r.ok) return json({ error: 'ai_error', status: r.status }, 502, cors);
-    const data = await r.json();
-    const text = ((data.content || []).find(c => c.type === 'text') || {}).text || '';
+    let text = '';
+    if (env.ANTHROPIC_API_KEY) {
+      // Paid option: Claude
+      const r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model: MODEL, max_tokens: 400, system, messages })
+      });
+      if (!r.ok) return json({ error: 'ai_error', status: r.status }, 502, cors);
+      const data = await r.json();
+      text = ((data.content || []).find(c => c.type === 'text') || {}).text || '';
+    } else if (env.AI) {
+      // Free option: Cloudflare Workers AI (no API key; has a free daily allowance)
+      try {
+        const data = await env.AI.run('@cf/meta/llama-3.1-8b-instruct', { max_tokens: 400, messages: [{ role: 'system', content: system }, ...messages] });
+        text = String((data && data.response) || '');
+      } catch (e) { return json({ error: 'ai_error' }, 502, cors); }
+    } else {
+      return json({ error: 'no_ai_configured' }, 500, cors);
+    }
     let out;
     try { out = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1)); } catch { out = { verdict: 'unclear', answer: text.slice(0, 500) }; }
     if (!['legal', 'illegal', 'restricted', 'unclear'].includes(out.verdict)) out.verdict = 'unclear';
