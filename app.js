@@ -313,13 +313,14 @@ async function mod(){
   try{list=(await db.collection('bans').get()).docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.created||0)-(a.created||0))}catch(e){say(fe(e))}
   window.__bans=list;
   try{pend=(await db.collection('chains').get()).docs.filter(d=>{const r=d.data().review;return r==='pending'||!r}).length}catch{}
+  let regPend=0;try{await authed();regPend=(await db.collection('vehicles').where('status','==','pending').get()).size}catch{}
   const down=!!(SITE&&SITE.down);
-  const nav=[['over','Overview'],['look','Lookup'],['bank','Bank'],['tix','Tickets'],['lic','Licenses'],['bans','Bans'],['adm','Admins'],['site','Site']];
+  const nav=[['over','Overview'],['look','Lookup'],['bank','Bank'],['tix','Tickets'],['lic','Licenses'],['reg','Registrations'],['bans','Bans'],['adm','Admins'],['site','Site']];
   let adm=[];if(DT==='adm'){try{adm=(await db.collection('admins').get()).docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.created||0)-(a.created||0))}catch(e){say(e&&e.code==='permission-denied'?'Publish the newest rules':fe(e))}}
   let tix=[];if(DT==='tix'){try{await authed();tix=(await db.collection('tickets').orderBy('created','desc').limit(60).get()).docs.map(d=>({id:d.id,...d.data()}))}catch(e){say(e&&e.code==='permission-denied'?'Publish the newest rules':fe(e))}}
-  let lics=[],vehs=[];if(DT==='lic'){try{await authed();[lics,vehs]=await Promise.all([db.collection('licenses').get().then(q=>q.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.updated||0)-(a.updated||0))),db.collection('vehicles').orderBy('created','desc').limit(100).get().then(q=>q.docs.map(d=>({id:d.id,...d.data()})))])}catch(e){say(e&&e.code==='permission-denied'?'Publish the newest rules':fe(e))}}
+  let lics=[],vehs=[];if(DT==='lic'||DT==='reg'){try{await authed();[lics,vehs]=await Promise.all([db.collection('licenses').get().then(q=>q.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.updated||0)-(a.updated||0))),db.collection('vehicles').orderBy('created','desc').limit(100).get().then(q=>q.docs.map(d=>({id:d.id,...d.data()})))])}catch(e){say(e&&e.code==='permission-denied'?'Publish the newest rules':fe(e))}}
   const head=`<div class="st-head"><div class="st-title"><h2>Staff Console</h2><span>Republic of Stilton</span></div>
-    <div class="st-tabs">${nav.map(([k,l])=>`<button class="${DT===k?'on':''}" onclick="dashTab('${k}')">${l}${k==='bans'?`<b>${list.length}</b>`:''}</button>`).join('')}</div>
+    <div class="st-tabs">${nav.map(([k,l])=>`<button class="${DT===k?'on':''}" onclick="dashTab('${k}')">${l}${k==='bans'?`<b>${list.length}</b>`:k==='reg'&&regPend?`<b>${regPend}</b>`:''}</button>`).join('')}</div>
     <div class="st-r"><span class="st-stat ${down?'bad':''}">${down?'Site shut down':'Site operational'}</span><input id="b_pin" type="password" placeholder="Staff PIN" title="Staff PIN, used for every action" name="ros-staff-pin" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" oninput="PIN=this.value.trim()" value="${esc(pin())}"></div></div>`;
   let body='';
   if(DT==='over')body=`<div class="panel" id="health"></div>
@@ -327,7 +328,8 @@ async function mod(){
       <div class="kpi"><div class="lbl">Online now</div><div class="big" id="t_online">…</div><div class="mu">logged in right now</div></div>
       <div class="kpi"><div class="lbl">SB in circulation</div><div class="big" id="t_econ">…</div><div class="mu" id="t_econ_s">counting…</div></div>
       <div class="kpi click" onclick="dashTab('bans')"><div class="lbl">Banned</div><div class="big">${list.length}</div><div class="mu">people banned</div></div>
-      <div class="kpi click" onclick="go('chains')"><div class="lbl">Chain applications</div><div class="big">${pend}</div><div class="mu">waiting for review</div></div></div>
+      <div class="kpi click" onclick="go('chains')"><div class="lbl">Chain applications</div><div class="big">${pend}</div><div class="mu">waiting for review</div></div>
+      <div class="kpi click" onclick="dashTab('reg')"><div class="lbl">Vehicle registrations</div><div class="big">${regPend}</div><div class="mu">waiting for review</div></div></div>
     <div class="cols">
       <div class="panel"><div class="hl"><h3>Recent activity</h3><span class="mu" style="font-size:.85em">Refreshes every 30 seconds</span></div><p class="sub">Bank activity and bans, newest first.</p><div id="pulse"><div class="loader"><span class="spin"></span><span>Loading…</span></div></div></div>
       <div class="panel"><h3>Actions</h3><p class="sub">Common staff tasks.</p><div class="acts">
@@ -336,6 +338,9 @@ async function mod(){
         <button onclick="dashTab('bans')">Ban a user</button>
         <button onclick="dashTab('bank')">Give or remove cash</button>
         <button onclick="dashTab('look')">Look up a user</button>
+        <button onclick="dashTab('reg')">Review vehicle registrations</button>
+        <button onclick="dashTab('lic')">Turn a license on or off</button>
+        <button onclick="dashTab('tix')">Issue a ticket</button>
         <button onclick="go('chains')">Review chain applications</button></div></div></div>
     <div class="panel" id="online" style="margin-top:1.2em"><h3>Online now</h3><div class="loader"><span class="spin"></span><span>Loading…</span></div></div>`;
   else if(DT==='look')body=`<div class="panel"><h3>Look up a user</h3><p class="sub">See whether someone is banned, when they were last online, how many devices are on record and their recent bank activity.</p>
@@ -353,7 +358,8 @@ async function mod(){
     <div class="row"><div><label>Discord user ID *</label><input id="ad_id" inputmode="numeric" placeholder="e.g. 123456789012345678"></div><div><label>Name or note</label><input id="ad_name" maxlength="80" placeholder="e.g. Jordan"></div></div>
     <p><button class="btn" onclick="addAdmin()">Give admin</button></p></div>
     <div class="panel"><h3>Admins added here (${adm.length})</h3><table class="tbl"><tr><th>User</th><th>Added by</th><th>When</th><th></th></tr>${adm.map(x=>`<tr><td><b>${esc(x.name||'—')}</b><br><span class="mu">${esc(x.id)}</span></td><td>${esc(x.by_name||'')}</td><td class="mu">${esc(new Date(x.created||0).toLocaleString())}</td><td style="text-align:right"><button class="btn s" onclick="removeAdmin('${safeId(x.id)}')">Remove</button></td></tr>`).join('')||'<tr><td class="mu" colspan="4">Nobody added yet. Staff-role members on Discord are not listed here.</td></tr>'}</table></div>`;
-  else if(DT==='lic')body=licPanel(lics,vehs);
+  else if(DT==='lic')body=licPanel(lics);
+  else if(DT==='reg')body=regPanel(vehs,lics);
   else if(DT==='bans')body=`<div class="panel"><h3>Ban a user</h3><p class="sub">Banning someone also bans every device they have logged in from. Uses the staff PIN at the top right.</p>
     <div class="row"><div><label>Discord user ID *</label><input id="b_id" placeholder="e.g. 123456789012345678" inputmode="numeric"></div><div><label>Reason (shown to them)</label><input id="b_reason" maxlength="200"></div></div>
     <label style="display:flex;gap:10px;align-items:flex-start;text-transform:none;letter-spacing:0;font-size:.9rem"><input id="b_fp" type="checkbox" checked style="width:auto;margin-top:3px"><span>Also ban their hardware fingerprint <span class="mu">(stronger, but could also block someone with an identical device)</span></span></label>
@@ -711,6 +717,8 @@ const MOTO=/motor\s*cycle|motor\s*bike|dirt\s*bike|\bbike\b|scooter|moped|choppe
 const normPlate=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
 const pv=()=>$('#pbody')||$('#view');                                   // bank() and tickets() draw into this
 const ptTab=k=>{PT_TAB=k;portal()};
+const vst=c=>c.status||'accepted';   // vehicles registered before approvals existed count as approved
+const vtag=c=>{const x=vst(c);return `<span class="tag ${x==='accepted'?'g':x==='denied'?'r':'a'}">${x==='accepted'?'Approved':x==='denied'?'Denied':'Pending'}</span>`+(x==='denied'&&c.reason?`<div class="mu" style="font-size:.8em;margin-top:.3em">${esc(c.reason)}</div>`:'')};
 
 async function portal(){
   if(!S.user)return needLogin();
@@ -743,12 +751,12 @@ async function portal(){
     body=warn+`<div class="kpis">
       <div class="kpi click" onclick="ptTab('lic')"><div class="lbl">Driver license</div><div class="big ${on?'good':'badc'}">${on?'Active':'Inactive'}</div><div class="mu">${on?'You can drive':'You cannot drive'}</div></div>
       <div class="kpi click" onclick="ptTab('bank')"><div class="lbl">Bank total</div><div class="big">${hasAcct||acct?esc(SB(total)):'—'}</div><div class="mu">${acct?'cash + bank':'no account yet'}</div></div>
-      <div class="kpi click" onclick="ptTab('veh')"><div class="lbl">Vehicles</div><div class="big">${PCARS.length}</div><div class="mu">registered to you</div></div>
+      <div class="kpi click" onclick="ptTab('veh')"><div class="lbl">Vehicles</div><div class="big">${PCARS.length}</div><div class="mu">${PCARS.filter(c=>vst(c)==='pending').length?PCARS.filter(c=>vst(c)==='pending').length+' awaiting review':'registered to you'}</div></div>
       <div class="kpi ${tix.length?'click':''}" ${tix.length?`onclick="ptTab('tix')"`:''}><div class="lbl">Unpaid tickets</div><div class="big ${open.length?'badc':''}">${open.length}</div><div class="mu">${open.length?esc(SB(open.reduce((s,x)=>s+(Number(x.amount)||0),0)))+' owed':'all clear'}</div></div></div>
       ${open.length?`<div class="panel alert"><h3>You have ${open.length} unpaid ticket${open.length>1?'s':''}</h3><p class="sub">Pay them from your bank balance.</p><button class="btn" onclick="ptTab('tix')">View tickets</button></div>`:''}
       ${!on?`<div class="panel alert"><h3>Your license is inactive</h3><p class="sub" style="margin:0">You should not drive until staff activate your license.</p></div>`:''}
       <div class="cols"><div class="panel"><h3>Your vehicles</h3><p class="sub">Registered to your account.</p>
-        <table class="tbl"><tr><th>Plate</th><th>Type</th><th>Vehicle</th></tr>${PCARS.slice(0,5).map(c=>`<tr><td><b>${esc(c.plate)}</b></td><td>${esc(c.type)}</td><td>${esc(c.make)} ${esc(c.model)}</td></tr>`).join('')||'<tr><td colspan="3" class="mu">No vehicles registered yet.</td></tr>'}</table></div>
+        <table class="tbl"><tr><th>Plate</th><th>Type</th><th>Vehicle</th><th>Status</th></tr>${PCARS.slice(0,5).map(c=>`<tr><td><b>${esc(c.plate)}</b></td><td>${esc(c.type)}</td><td>${esc(c.make)} ${esc(c.model)}</td><td>${vtag(c)}</td></tr>`).join('')||'<tr><td colspan="4" class="mu">No vehicles registered yet.</td></tr>'}</table></div>
        <div class="panel"><h3>Quick actions</h3><p class="sub">Jump to a section.</p><div class="acts">
         <button onclick="ptTab('bank')">Open the bank</button>
         <button onclick="ptTab('veh')">Register a vehicle</button>
@@ -763,14 +771,14 @@ async function portal(){
       <div class="panel"><h3>How it works</h3><p class="sub" style="margin:0">Licenses are issued and managed by staff. If your license is inactive and you think that is a mistake, contact the staff team on Discord.</p></div>`;
   }
   else if(PT_TAB==='veh'){
-    body=warn+`<div class="panel"><h3>Register a vehicle</h3><p class="sub">Cars, SUVs, trucks, vans, buses and commercial vehicles. <b>Motorcycles are not allowed</b> and will be removed.</p>
+    body=warn+`<div class="panel"><h3>Register a vehicle</h3><p class="sub">Cars, SUVs, trucks, vans, buses and commercial vehicles. <b>Motorcycles are not allowed</b> and will be removed. New registrations are reviewed by staff before they are approved.</p>
       ${hasAcct?'':'<p class="mu">Open your bank account in the Bank section first. Registration uses it to confirm who you are.</p>'}
       <div class="row"><div><label>License plate *</label><input id="v_plate" maxlength="10" placeholder="e.g. ROS1234"></div><div><label>Type *</label><select id="v_type">${VTYPES.map(x=>`<option>${x}</option>`).join('')}</select></div></div>
       <div class="row"><div><label>Make *</label><input id="v_make" maxlength="30" placeholder="e.g. Ford"></div><div><label>Model *</label><input id="v_model" maxlength="30" placeholder="e.g. Mustang"></div></div>
       <label>Color</label><input id="v_color" maxlength="20" placeholder="e.g. Black">
       <p><button class="btn" onclick="regVehicle()">Register vehicle</button></p></div>
       <div class="panel"><h3>Your vehicles (${PCARS.length})</h3><p class="sub">You can register up to 5.</p>
-      <table class="tbl"><tr><th>Plate</th><th>Type</th><th>Vehicle</th><th>Color</th><th></th></tr>${PCARS.map(c=>`<tr><td><b>${esc(c.plate)}</b></td><td>${esc(c.type)}</td><td>${esc(c.make)} ${esc(c.model)}</td><td>${esc(c.color||'')}</td><td style="text-align:right"><button class="btn s" onclick="delVehicle('${safeId(c.id)}')">Remove</button></td></tr>`).join('')||'<tr><td colspan="5" class="mu">No vehicles registered yet.</td></tr>'}</table></div>`;
+      <table class="tbl"><tr><th>Plate</th><th>Type</th><th>Vehicle</th><th>Color</th><th>Status</th><th></th></tr>${PCARS.map(c=>`<tr><td><b>${esc(c.plate)}</b></td><td>${esc(c.type)}</td><td>${esc(c.make)} ${esc(c.model)}</td><td>${esc(c.color||'')}</td><td>${vtag(c)}</td><td style="text-align:right"><button class="btn s" onclick="delVehicle('${safeId(c.id)}')">Remove</button></td></tr>`).join('')||'<tr><td colspan="6" class="mu">No vehicles registered yet.</td></tr>'}</table></div>`;
   }
   if(PT_TAB==='bank'||PT_TAB==='tix'){
     $('#view').innerHTML=`<div class="st pt">${head}${warn}<div id="pbody"></div></div>`;
@@ -786,8 +794,8 @@ async function regVehicle(){
   if(MOTO.test([type,make,model,color].join(' ')))return say('Motorcycles are not allowed to be registered.');
   if(PCARS.length>=5)return say('You can register up to 5 vehicles. Remove one first.');
   try{await authed();
-    await db.collection('vehicles').doc('p_'+plate).set({ownerId:S.user.id,ownerName:S.user.name.slice(0,80),plate,type,make:make.slice(0,30),model:model.slice(0,30),color:color.slice(0,20),created:Date.now()});
-    say('Vehicle registered.');portal()}
+    await db.collection('vehicles').doc('p_'+plate).set({ownerId:S.user.id,ownerName:S.user.name.slice(0,80),plate,type,make:make.slice(0,30),model:model.slice(0,30),color:color.slice(0,20),status:'pending',created:Date.now()});
+    say('Submitted! Staff will review your registration.');portal()}
   catch(e){say(e&&e.code==='permission-denied'?'Blocked. That plate may already be registered, or you need to open your bank account first (Bank section).':(e.message||fe(e)))}
 }
 async function delVehicle(vid){
@@ -797,12 +805,34 @@ async function delVehicle(vid){
 }
 
 // ---------- staff: licenses + vehicles (used by the "Licenses" tab in mod()) ----------
-function licPanel(lics,vehs){
-  return `<div class="panel"><h3>Set a license</h3><p class="sub">Active means the person may drive. People with no record show as Inactive. Uses the staff PIN at the top right.</p>
+const fillTicket=id=>{DT='tix';mod().then(()=>{const el=$('#tk_id');if(el&&id){el.value=id;el.scrollIntoView({block:'center'})}})};
+function licPanel(lics){
+  return `<div class="panel"><h3>Turn a license on or off</h3><p class="sub">Active means the person may drive. People with no record show as Inactive. Uses the staff PIN at the top right.</p>
     <div class="row"><div><label>Discord user ID *</label><input id="lc_id" inputmode="numeric" placeholder="e.g. 123456789012345678"></div><div><label>Note (optional)</label><input id="lc_note" maxlength="100" placeholder="e.g. Suspended for reckless driving"></div></div>
-    <p><button class="btn" onclick="setLicense('active')">Set Active</button> <button class="btn s" onclick="setLicense('inactive')">Set Inactive</button></p></div>
-    <div class="panel"><h3>Licenses on record (${lics.length})</h3><table class="tbl"><tr><th>User ID</th><th>Status</th><th>Note</th><th>By</th><th>Updated</th></tr>${lics.map(x=>`<tr><td>${esc(x.id)}</td><td><span class="tag ${x.status==='active'?'g':'r'}">${esc(x.status)}</span></td><td>${esc(x.note||'')}</td><td>${esc(x.by_name||'')}</td><td class="mu">${esc(new Date(x.updated||0).toLocaleString())}</td></tr>`).join('')||'<tr><td colspan="5" class="mu">No licenses on record.</td></tr>'}</table></div>
-    <div class="panel"><h3>Registered vehicles (${vehs.length})</h3><p class="sub">Remove anything that should not be registered, such as a motorcycle.</p><table class="tbl"><tr><th>Plate</th><th>Type</th><th>Vehicle</th><th>Owner</th><th></th></tr>${vehs.map(x=>`<tr><td><b>${esc(x.plate)}</b></td><td>${esc(x.type)}</td><td>${esc(x.make)} ${esc(x.model)}</td><td>${esc(x.ownerName||'')}<br><span class="mu">${esc(x.ownerId)}</span></td><td style="text-align:right"><button class="btn s" onclick="staffDelVehicle('${safeId(x.id)}')">Remove</button></td></tr>`).join('')||'<tr><td colspan="5" class="mu">No vehicles registered.</td></tr>'}</table></div>`;
+    <p><button class="btn" onclick="setLicense('active')">Turn ON (Active)</button> <button class="btn s" onclick="setLicense('inactive')">Turn OFF (Inactive)</button></p></div>
+    <div class="panel"><h3>Licenses on record (${lics.length})</h3><table class="tbl"><tr><th>User ID</th><th>Status</th><th>Note</th><th>By</th><th>Updated</th><th></th></tr>${lics.map(x=>`<tr><td>${esc(x.id)}</td><td><span class="tag ${x.status==='active'?'g':'r'}">${esc(x.status)}</span></td><td>${esc(x.note||'')}</td><td>${esc(x.by_name||'')}</td><td class="mu">${esc(new Date(x.updated||0).toLocaleString())}</td><td style="text-align:right;white-space:nowrap">${x.status==='active'?`<button class="btn s" onclick="licToggle('${safeId(x.id)}','inactive')">Turn off</button>`:`<button class="btn" onclick="licToggle('${safeId(x.id)}','active')">Turn on</button>`} <button class="btn s" onclick="fillTicket('${safeId(x.id)}')">Ticket</button></td></tr>`).join('')||'<tr><td colspan="6" class="mu">No licenses on record.</td></tr>'}</table></div>`;
+}
+function regPanel(vehs,lics){
+  const lm={};lics.forEach(l=>lm[l.id]=l.status);
+  const lt=id=>lm[id]==='active'?'<span class="tag g">license on</span>':'<span class="tag r">license off</span>';
+  const pend=vehs.filter(x=>vst(x)==='pending'),rest=vehs.filter(x=>vst(x)!=='pending');
+  const who=x=>`${esc(x.ownerName||'')}<br><span class="mu">${esc(x.ownerId)}</span>`;
+  return `<div class="panel"><h3>Waiting for review (${pend.length})</h3><p class="sub">Accept or deny new vehicle registrations. Motorcycles are not allowed: deny them. Uses the staff PIN at the top right.</p>
+    <table class="tbl"><tr><th>Plate</th><th>Type</th><th>Vehicle</th><th>Owner</th><th>License</th><th>Sent</th><th></th></tr>${pend.map(x=>`<tr><td><b>${esc(x.plate)}</b></td><td>${esc(x.type)}</td><td>${esc(x.make)} ${esc(x.model)}${x.color?'<br><span class="mu">'+esc(x.color)+'</span>':''}</td><td>${who(x)}</td><td>${lt(x.ownerId)}</td><td class="mu">${ago(x.created)}</td><td style="text-align:right;white-space:nowrap"><button class="btn" onclick="reviewVehicle('${safeId(x.id)}','accepted')">Accept</button> <button class="btn s" onclick="reviewVehicle('${safeId(x.id)}','denied')">Deny</button></td></tr>`).join('')||'<tr><td colspan="7" class="mu">Nothing waiting for review.</td></tr>'}</table></div>
+    <div class="panel"><h3>Reviewed and approved vehicles (${rest.length})</h3><p class="sub">Remove anything that should not be registered. Denied registrations can be removed too.</p>
+    <table class="tbl"><tr><th>Plate</th><th>Type</th><th>Vehicle</th><th>Owner</th><th>Status</th><th></th></tr>${rest.map(x=>`<tr><td><b>${esc(x.plate)}</b></td><td>${esc(x.type)}</td><td>${esc(x.make)} ${esc(x.model)}</td><td>${who(x)}</td><td>${vtag(x)}</td><td style="text-align:right;white-space:nowrap"><button class="btn s" onclick="fillTicket('${safeId(x.ownerId)}')">Ticket</button> <button class="btn s" onclick="staffDelVehicle('${safeId(x.id)}')">Remove</button></td></tr>`).join('')||'<tr><td colspan="6" class="mu">No vehicles yet.</td></tr>'}</table></div>`;
+}
+async function reviewVehicle(vid,status){
+  if(!S.staff||!vid)return;let reason='';
+  if(status==='denied'){const r=prompt('Reason for denying (shown to the owner, optional)');if(r===null)return;reason=r.trim().slice(0,100)}
+  try{await staffWrite('v_'+vid,b=>b.update(db.collection('vehicles').doc(vid),{status,reason,reviewed_by:S.user.id,reviewed_name:S.user.name.slice(0,80),reviewed:Date.now()}));
+    say(status==='accepted'?'Registration accepted.':'Registration denied.');mod()}catch(e){say(e.message||fe(e))}
+}
+async function licToggle(id,status){
+  if(!S.staff||!id)return;let note='';
+  if(status==='inactive'){const r=prompt('Reason for turning this license off (optional)');if(r===null)return;note=r.trim().slice(0,100)}
+  try{await staffWrite('l_'+id,b=>b.set(db.collection('licenses').doc(id),{status,by:S.user.id,by_name:S.user.name.slice(0,80),updated:Date.now(),note}));
+    say('License turned '+(status==='active'?'on':'off')+'.');mod()}catch(e){say(e.message||fe(e))}
 }
 async function setLicense(status){
   const id=($('#lc_id').value||'').replace(/\D/g,'');
