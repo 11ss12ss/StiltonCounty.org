@@ -912,6 +912,10 @@ async function staffDelVehicle(vid){
 (function(){
   const st=document.createElement('style');
   st.textContent=`
+  /* phones: wide tables scroll inside their own box instead of widening the whole page */
+  .panel,.card{overflow-x:auto}
+  .st-r{flex-wrap:wrap}
+  @media(max-width:700px){.st{font-size:14px}.tbl th,.tbl td{padding:.5em .45em}.tbl td .btn,.tbl td button{white-space:nowrap}}
   #who{display:flex;align-items:center;flex-wrap:wrap;gap:10px}
   .modebtn{display:inline-flex;align-items:center;gap:.6em;background:var(--panel2);border:1px solid var(--bd);color:var(--tx);border-radius:8px;padding:8px 12px;font:600 .78rem system-ui,sans-serif;letter-spacing:.07em;text-transform:uppercase;cursor:pointer}
   .modebtn:hover{filter:brightness(1.15)}
