@@ -152,17 +152,17 @@ Existing Stilton City Laws shall remain in effect to the extent that they do not
 
 Article XIII - Criminal Code
 Section 1. Murder
-Murder, meaning intentionally killing another person, is illegal. Penalty: [PUT YOUR PENALTY HERE, for example 30 minutes jail and a 5,000 SB fine].
+Murder, meaning intentionally killing another person, is illegal. Penalty: [30 minutes jail and a 5,000 SB fine].
 Section 2. Assault
-Assault, meaning attacking or physically harming another person, is illegal. Penalty: [PUT YOUR PENALTY HERE].
+Assault, meaning attacking or physically harming another person, is illegal. Penalty: [15 mins jail and a 2,500 SB fine].
 Section 3. Theft
-Theft, meaning stealing another person's property, is illegal. Penalty: [PUT YOUR PENALTY HERE].
+Theft, meaning stealing another person's property, is illegal. Penalty: [10 mins jail and a 2,250 SB fine].
 Section 4. Robbery
-Robbery, meaning taking property from a person by force or threat, is illegal. Penalty: [PUT YOUR PENALTY HERE].
+Robbery, meaning taking property from a person by force or threat, is illegal. Penalty: [15 min jail and a 1,500 fine].
 Section 5. Vehicle theft
-Stealing a vehicle is illegal. Penalty: [PUT YOUR PENALTY HERE].
+Stealing a vehicle is illegal. Penalty: [10 mins jail and a 2,250 SB fine].
 Section 6. Speeding
-Driving over the speed limit is illegal. Penalty: [PUT YOUR PENALTY HERE].
+Driving over the speed limit is illegal. Penalty: [150-5000 SB fine].
 Section 7. Reckless driving
 Driving recklessly or dangerously is illegal. Penalty: [PUT YOUR PENALTY HERE].
 Section 8. Driving without a license
