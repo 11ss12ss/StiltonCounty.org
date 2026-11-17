@@ -1,5 +1,5 @@
 /* ROS Website - privacy notice, cookie banner and visitor IP log.
- * Load AFTER app.js:  <script src="privacy-notice.js?v=7"></script>
+ * Load AFTER app.js:  <script src="privacy-notice.js?v=8"></script>
  *
  * - Shows a cookie / privacy banner until the visitor clicks "Got it".
  * - A small "Privacy" button (bottom-center) reopens the full disclaimer at any time.
@@ -189,9 +189,32 @@
     } catch (e) { /* lookup blocked (ad blocker) or quota out: try again next visit */ }
   }
 
+  // ---------------- Hide the Mods tab when logged out ----------------
+  // app.js redraws the menu often (login, tab changes), so re-check whenever #nav changes.
+  function syncModsTab() {
+    const nav = document.getElementById("nav");
+    if (!nav) return;
+    let loggedIn = false;
+    try { loggedIn = typeof S !== "undefined" && !!(S && S.user); } catch (e) { /* ignore */ }
+    nav.querySelectorAll("button").forEach((b) => {
+      if (/mods\.html/.test(b.getAttribute("onclick") || "")) {
+        const want = loggedIn ? "" : "none";
+        if (b.style.display !== want) b.style.display = want;
+      }
+    });
+  }
+  function watchModsTab() {
+    const nav = document.getElementById("nav");
+    if (!nav) return;
+    syncModsTab();
+    new MutationObserver(syncModsTab).observe(nav, { childList: true, subtree: true });
+    setInterval(syncModsTab, 2000);   // also catches logout, which may not redraw the menu
+  }
+
   // ---------------- start ----------------
   function start() {
     showSecurityBar();
+    watchModsTab();
     if (store.get(CONSENT_KEY)) showPill(); else showBanner();
     // Wait a few seconds so a logged-in user's Discord name is known before recording.
     setTimeout(logVisit, 8000);
