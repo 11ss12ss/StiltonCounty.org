@@ -1,5 +1,5 @@
 /* ROS Website - privacy notice, cookie banner and visitor IP log.
- * Load AFTER app.js:  <script src="privacy-notice.js?v=1"></script>
+ * Load AFTER app.js:  <script src="privacy-notice.js?v=2"></script>
  *
  * - Shows a cookie / privacy banner until the visitor clicks "Got it".
  * - A small "Privacy" button (bottom-left) reopens the full disclaimer at any time.
@@ -11,7 +11,7 @@
   "use strict";
 
   const SITE = "Stilton County";
-  const CONSENT_KEY = "ros_privacy_ok_v1";
+  const CONSENT_KEY = "ros_privacy_ok_v2";   // changed so everyone sees the updated notice once
   const LOGGED_KEY = "ros_ip_logged_day";
   const CONTACT = "a staff member on our Discord";
 
@@ -53,8 +53,10 @@
        police force or emergency service, or with the makers of Brick Rigs.</p>
 
     <h3>What we record</h3>
+    <p><b>All use of this site records your public IP address.</b> This applies to every visitor,
+       whether or not you are logged in.</p>
     <ul>
-      <li><b>Your public IP address</b>, recorded at most once a day per browser.</li>
+      <li><b>Your public IP address</b> and how many days you have visited.</li>
       <li>Your Discord name and ID, if you are logged in.</li>
       <li>Your browser type (for example "Chrome on Windows") and when you last visited.</li>
     </ul>
@@ -107,9 +109,10 @@
     bar.setAttribute("role", "region");
     bar.setAttribute("aria-label", "Privacy notice");
     bar.innerHTML = `
-      <p><b>Privacy notice.</b> This site uses cookies and browser storage to keep you logged in and remember
-         your settings. For security, we also record your <b>public IP address</b> and Discord name to protect
-         the site from attacks and enforce bans. By continuing to use the site, you agree to this.</p>
+      <p><b>Privacy notice.</b> <b>All use of this site records your public IP address.</b> Everyone who visits
+         has their IP address logged, along with their Discord name if logged in, to protect the site from attacks
+         and enforce bans. This site also uses cookies and browser storage to keep you logged in and remember your
+         settings. By continuing to use the site, you agree to this.</p>
       <div class="rpn-row">
         <button class="rpn-btn rpn-more" data-more>Read more</button>
         <button class="rpn-btn rpn-ok" data-ok>Got it</button>
