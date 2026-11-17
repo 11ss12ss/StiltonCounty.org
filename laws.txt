@@ -178,5 +178,90 @@ Resisting a lawful arrest is illegal. Penalty: [PUT YOUR PENALTY HERE].
 Section 13. Bribery
 Offering or taking a bribe from a public official is illegal. Penalty: [PUT YOUR PENALTY HERE].
 
+Article XIV  Police Violations and Fines
+Issued by the Stilton City Police Department (document reference SCRP-VF-001). This schedule lists the fines officers may issue. All fines are in SB. Where a penalty says "Warning or", the officer may give a warning instead of a fine.
+Section 1. Traffic Violations
+Speeding: Warning or 150 SB.
+Failure to Control Vehicle: Warning or 100 SB.
+Failure to Yield: Warning or 350 SB.
+Failure to Yield to a School Bus: 500 SB.
+Failure to Yield for Emergency Vehicles: 500 SB.
+Unsafe Following Distance: Warning or 150 SB.
+Unsafe Lane Change: Warning or 150 SB.
+Improper Turn: Warning or 150 SB.
+Failure to Display or Obstructed License Plate: Warning or 100 SB, plus a repair order.
+Improper Parking: 250 SB.
+Distracted Driving: Warning or 350 SB.
+Obstructing Traffic: Warning or 200 SB.
+Seat Belt Violation: Warning or 150 SB.
+Equipment Violation (broken tail light, etc.): Warning or 150 SB.
+Expired Registration: 200 SB.
+Expired Insurance: Warning or 150 SB.
+Improper or Broken Equipment: 400 SB, plus a repair order.
+Reckless Driving: 750 SB.
+Driving on the Wrong Side of the Road: 400 SB.
+Illegal U-Turn: 200 SB.
+Failure to Stop at a Stop Sign: 200 SB.
+Failure to Obey a Traffic Signal: 300 SB.
+Unnecessary Horn Use: 100 SB.
+Illegal Street Racing: 1,000 SB.
+Section 2. Public Order Offences
+These offences concern public behaviour, pedestrian safety and disturbances in public areas of Stilton City.
+Jaywalking: Warning or 120 SB.
+Failure to Obey a Pedestrian Signal: Warning or 120 SB.
+Intoxication in Public: Warning or 150 SB.
+Public Disturbance: 300 SB.
+Disorderly Conduct: 350 SB.
+Verbal Harassment: 300 SB.
+Refusal to Leave Private Property: 400 SB.
+Public Nuisance: 200 SB.
+Unlawful Assembly: 500 SB.
+Trespassing: 400 SB.
+Vandalism: 750 SB.
+Property Damage: 1,000 SB.
+Section 3. Vehicle and Road Safety Offences
+Driving Without a Valid License: 500 SB.
+Driving While Suspended: 800 SB.
+Evading Police: 1,000 SB.
+Failure to Stop for Police: 600 SB.
+Hit and Run: 1,000 SB.
+Reckless Endangerment with a Vehicle: 850 SB.
+Driving Under the Influence: 1,000 SB.
+Abandoning a Vehicle on the Roadway: 300 SB.
+Unauthorized Vehicle Modification: 350 SB.
+Unlawful Use of Emergency Equipment: 500 SB.
+Any of the offences in this section can also lead to arrest, at the officer's discretion.
+Section 4. Criminal Offences
+The following offences are more serious and may result in arrest, criminal charges and additional penalties.
+Petty Theft: 500 SB.
+Shoplifting: 400 SB.
+Theft of Property: 750 SB.
+Possession of Stolen Property: 750 SB.
+Assault: 750 SB.
+Aggravated Assault: 1,500 SB.
+Resisting Arrest: 600 SB.
+Obstruction of Justice: 750 SB.
+Criminal Threats: 750 SB.
+Unlawful Possession of a Weapon: 1,000 SB.
+Brandishing a Weapon: 900 SB.
+Unlawful Discharge of a Firearm: 1,500 SB.
+Robbery: 1,500 SB.
+Armed Robbery: 2,500 SB.
+Kidnapping: 2,500 SB.
+Attempted Murder: 3,000 SB.
+Murder: 5,000 SB.
+Section 5. Fine and Enforcement Guidelines
+Issuing citations: Officers must make sure the correct offence is selected and the matching fine is applied. Fines are issued as tickets on stiltoncounty.org; officers should consider the severity of the violation when choosing the ticket.
+Warnings: Officers may give verbal or written warnings for minor violations, at their discretion.
+Repeat offenders: People who repeatedly commit the same violations may receive increased enforcement action within the listed penalty range, under department procedures.
+Serious offences: Serious criminal offences may result in arrest, detention and additional criminal charges. Paying a fine does not automatically replace an arrest.
+Repair orders: A vehicle found with defective or unsafe equipment may receive a repair order. The vehicle must be fixed before it is considered roadworthy in roleplay.
+Officer discretion: Officers must use reasonable judgement when issuing penalties. Fines must not be issued unfairly, randomly or as personal punishment.
+Section 6. Citation Requirements
+Every citation should include: the name of the person receiving it; the date and time of the violation; the location; the specific offence; the fine amount; the issuing officer's name and collar number; and any additional notes or evidence.
+Failing to properly document a citation may result in a departmental review.
+Section 7. Final Notice
+All civilians, motorists and law enforcement personnel in Stilton City Roleplay are expected to know this schedule. Not knowing a violation is listed here does not automatically exempt a person from enforcement.
+
 End of the Constitution of Stilton City
 All city laws, departments, and public officials are subordinate to this Constitution. No person is above the law.
