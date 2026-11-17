@@ -1,5 +1,5 @@
 /* ROS Website - privacy notice, cookie banner and visitor IP log.
- * Load AFTER app.js:  <script src="privacy-notice.js?v=5"></script>
+ * Load AFTER app.js:  <script src="privacy-notice.js?v=6"></script>
  *
  * - Shows a cookie / privacy banner until the visitor clicks "Got it".
  * - A small "Privacy" button (bottom-left) reopens the full disclaimer at any time.
@@ -58,7 +58,7 @@
   // ---------------- disclaimer text ----------------
   const DETAILS = `
     <h2>Privacy &amp; cookies</h2>
-    <h3>&#128274; Security update (November 2026)</h3>
+    <h3>Security update (November 2026)</h3>
     <p>After a denial-of-service attack on November 16, we strengthened the site's protections: our database now
        rejects malformed or tampered data, ban records can no longer be erased, and we keep a security log of
        visitor IP addresses to spot attacks and enforce bans. No action is needed from you.</p>
@@ -145,7 +145,7 @@
     bar.className = "rpn-sec";
     bar.setAttribute("role", "status");
     bar.innerHTML = `
-      <span>&#128274; <b>Security update!</b> We've strengthened the site's protections to keep your accounts and the community safe.</span>
+      <span><b>Security update!</b> We've strengthened the site's protections to keep your accounts and the community safe.</span>
       <a data-more>Learn more</a>
       <button class="rpn-sec-x" aria-label="Dismiss security update" data-x>&times;</button>`;
     bar.querySelector("[data-more]").onclick = openDetails;
