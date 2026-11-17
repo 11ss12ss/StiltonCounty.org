@@ -1,8 +1,8 @@
 /* ROS Website - privacy notice, cookie banner and visitor IP log.
- * Load AFTER app.js:  <script src="privacy-notice.js?v=6"></script>
+ * Load AFTER app.js:  <script src="privacy-notice.js?v=7"></script>
  *
  * - Shows a cookie / privacy banner until the visitor clicks "Got it".
- * - A small "Privacy" button (bottom-left) reopens the full disclaimer at any time.
+ * - A small "Privacy" button (bottom-center) reopens the full disclaimer at any time.
  * - Records each browser's public IP in Firestore (visits/<ip>) at most once per day,
  *   with the logged-in Discord name/id if there is one. Only you can read it, in the
  *   Firebase console (Firestore > visits). The website itself cannot read it back.
@@ -33,7 +33,7 @@
   .rpn-btn{border:0;border-radius:8px;padding:8px 16px;font:inherit;font-weight:600;cursor:pointer}
   .rpn-ok{background:var(--blue,#2f5bd1);color:#fff}
   .rpn-more{background:transparent;color:var(--tx,#eef3fb);border:1px solid var(--bd,#24407a)}
-  .rpn-pill{position:fixed;left:12px;bottom:12px;z-index:9998;background:var(--panel,#0f2347);
+  .rpn-pill{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:9998;background:var(--panel,#0f2347);
     color:var(--mu,#9db0d0);border:1px solid var(--bd,#24407a);border-radius:999px;padding:4px 12px;
     font-size:12px;cursor:pointer}
   .rpn-pill:hover{color:var(--tx,#eef3fb)}
