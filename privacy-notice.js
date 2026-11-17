@@ -1,5 +1,5 @@
 /* ROS Website - privacy notice, cookie banner and visitor IP log.
- * Load AFTER app.js:  <script src="privacy-notice.js?v=2"></script>
+ * Load AFTER app.js:  <script src="privacy-notice.js?v=3"></script>
  *
  * - Shows a cookie / privacy banner until the visitor clicks "Got it".
  * - A small "Privacy" button (bottom-left) reopens the full disclaimer at any time.
@@ -53,8 +53,7 @@
        police force or emergency service, or with the makers of Brick Rigs.</p>
 
     <h3>What we record</h3>
-    <p><b>All use of this site records your public IP address.</b> This applies to every visitor,
-       whether or not you are logged in.</p>
+    <p><b>We collect your public IP address</b> from everyone who uses the site, whether or not you are logged in.</p>
     <ul>
       <li><b>Your public IP address</b> and how many days you have visited.</li>
       <li>Your Discord name and ID, if you are logged in.</li>
@@ -109,10 +108,9 @@
     bar.setAttribute("role", "region");
     bar.setAttribute("aria-label", "Privacy notice");
     bar.innerHTML = `
-      <p><b>Privacy notice.</b> <b>All use of this site records your public IP address.</b> Everyone who visits
-         has their IP address logged, along with their Discord name if logged in, to protect the site from attacks
-         and enforce bans. This site also uses cookies and browser storage to keep you logged in and remember your
-         settings. By continuing to use the site, you agree to this.</p>
+      <p><b>Privacy notice.</b> <b>We collect your public IP address</b> (and your Discord name if you're logged in)
+         to protect the site from attacks and enforce bans. We also use cookies to keep you logged in and remember
+         your settings. By continuing to use the site, you agree to this.</p>
       <div class="rpn-row">
         <button class="rpn-btn rpn-more" data-more>Read more</button>
         <button class="rpn-btn rpn-ok" data-ok>Got it</button>
