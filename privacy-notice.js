@@ -1,5 +1,5 @@
 /* ROS Website - privacy notice, cookie banner and visitor IP log.
- * Load AFTER app.js:  <script src="privacy-notice.js?v=4"></script>
+ * Load AFTER app.js:  <script src="privacy-notice.js?v=5"></script>
  *
  * - Shows a cookie / privacy banner until the visitor clicks "Got it".
  * - A small "Privacy" button (bottom-left) reopens the full disclaimer at any time.
@@ -13,6 +13,7 @@
   const SITE = "Stilton County";
   const CONSENT_KEY = "ros_privacy_ok_v2";   // changed so everyone sees the updated notice once
   const LOGGED_KEY = "ros_ip_logged_day";
+  const SECURITY_KEY = "ros_security_update_2026_11";   // change to show a new security bar
   const CONTACT = "a staff member on our Discord";
 
   // ---------------- storage helpers (never throw) ----------------
@@ -43,12 +44,25 @@
   .rpn-modal h2{margin:0 0 10px;font-size:20px}
   .rpn-modal h3{margin:16px 0 6px;font-size:15px}
   .rpn-modal ul{margin:0;padding-left:20px}
-  .rpn-modal p{margin:0 0 8px}`;
+  .rpn-modal p{margin:0 0 8px}
+  .rpn-sec{display:flex;align-items:center;gap:12px;justify-content:center;flex-wrap:wrap;
+    background:linear-gradient(90deg,#14532d,#166534);color:#ecfdf5;border-bottom:1px solid #22c55e;
+    padding:9px 44px 9px 16px;font-size:14px;line-height:1.4;position:relative;text-align:center}
+  .rpn-sec b{color:#fff}
+  .rpn-sec a{color:#bbf7d0;font-weight:600;text-decoration:underline;cursor:pointer}
+  .rpn-sec-x{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:transparent;border:0;
+    color:#d1fae5;font-size:20px;line-height:1;cursor:pointer;padding:4px 8px;border-radius:6px}
+  .rpn-sec-x:hover{background:rgba(255,255,255,.12)}`;
   document.head.appendChild(css);
 
   // ---------------- disclaimer text ----------------
   const DETAILS = `
     <h2>Privacy &amp; cookies</h2>
+    <h3>&#128274; Security update (November 2026)</h3>
+    <p>After a denial-of-service attack on November 16, we strengthened the site's protections: our database now
+       rejects malformed or tampered data, ban records can no longer be erased, and we keep a security log of
+       visitor IP addresses to spot attacks and enforce bans. No action is needed from you.</p>
+
     <p>${SITE} is a fan-run roleplay community. It is not affiliated with any real government,
        police force or emergency service, or with the makers of Brick Rigs.</p>
 
@@ -124,6 +138,21 @@
     document.body.appendChild(bar);
   }
 
+  // ---------------- "Security update!" bar at the top of every page ----------------
+  function showSecurityBar() {
+    if (store.get(SECURITY_KEY) || document.querySelector(".rpn-sec")) return;
+    const bar = document.createElement("div");
+    bar.className = "rpn-sec";
+    bar.setAttribute("role", "status");
+    bar.innerHTML = `
+      <span>&#128274; <b>Security update!</b> We've strengthened the site's protections to keep your accounts and the community safe.</span>
+      <a data-more>Learn more</a>
+      <button class="rpn-sec-x" aria-label="Dismiss security update" data-x>&times;</button>`;
+    bar.querySelector("[data-more]").onclick = openDetails;
+    bar.querySelector("[data-x]").onclick = () => { store.set(SECURITY_KEY, "1"); bar.remove(); };
+    document.body.prepend(bar);
+  }
+
   // ---------------- IP log ----------------
   function currentUser() {
     try {
@@ -162,6 +191,7 @@
 
   // ---------------- start ----------------
   function start() {
+    showSecurityBar();
     if (store.get(CONSENT_KEY)) showPill(); else showBanner();
     // Wait a few seconds so a logged-in user's Discord name is known before recording.
     setTimeout(logVisit, 8000);
