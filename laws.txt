@@ -263,5 +263,54 @@ Failing to properly document a citation may result in a departmental review.
 Section 7. Final Notice
 All civilians, motorists and law enforcement personnel in Stilton City Roleplay are expected to know this schedule. Not knowing a violation is listed here does not automatically exempt a person from enforcement.
 
+Article XV  Federal Offences
+Federal offences are serious crimes against the Republic of Stilton as a whole: its government, its bank, its justice system and its emergency services. They are part of the Stilton City Laws and remain subject to this Constitution. Any authorized law enforcement department may investigate them. Federal offences are heard by an authorized judge, who sets the sentence within the listed range. All fines are in SB.
+Section 1. Vehicle Identity Fraud
+Using a fake, altered, stolen or borrowed license plate, or otherwise disguising a vehicle's identity, to hide the vehicle or its owner from police or an investigation.
+Penalty: 10 to 20 minutes jail and a 3,000 to 6,000 SB fine. The vehicle may be impounded.
+Section 2. Obstruction of a Federal Investigation
+Hiding, destroying or falsifying evidence, or hiding a person or vehicle, to interfere with an investigation into a federal offence.
+Penalty: 15 to 30 minutes jail and a 5,000 to 10,000 SB fine.
+Section 3. Bank Fraud
+Deceiving the bank or another person to move money, using another person's bank account without permission, or exploiting a bug or mistake to create or take money.
+Penalty: 20 to 40 minutes jail and a 5,000 to 15,000 SB fine. Any money gained must be paid back, and staff may remove it from the offender's account.
+Section 4. Money Laundering
+Moving money through businesses, other people or other accounts to hide that it came from a crime.
+Penalty: 20 to 40 minutes jail and a 10,000 to 20,000 SB fine.
+Section 5. Counterfeiting and Forgery
+Making or using fake money, fake licenses, fake permits or fake official documents.
+Penalty: 15 to 30 minutes jail and a 5,000 to 10,000 SB fine.
+Section 6. Impersonating a Public Official
+Pretending to be a police officer, firefighter, medic, judge or government official, including by using their uniforms, vehicles, equipment or radio channels without authorization.
+Penalty: 15 to 30 minutes jail and a 5,000 to 10,000 SB fine.
+Section 7. Bribery and Corruption
+Offering, giving, asking for or accepting money, items or favors to influence a public official's decision.
+Penalty: 20 to 40 minutes jail and a 10,000 to 20,000 SB fine. A public official convicted of this offence may also be removed from their position.
+Section 8. Perjury and False Reports
+Knowingly lying under oath in a court hearing, or knowingly making a false police report or false 911 call.
+Penalty: 10 to 20 minutes jail and a 2,500 to 5,000 SB fine.
+Section 9. Witness Tampering and Intimidation
+Threatening, bribing or pressuring a witness, victim, judge or official to change their testimony or decision.
+Penalty: 20 to 40 minutes jail and an 8,000 to 15,000 SB fine.
+Section 10. Escape from Custody
+Escaping, or helping someone escape, from a lawful arrest, detention or jail sentence.
+Penalty: 20 to 40 minutes jail and a 5,000 to 10,000 SB fine. The original sentence restarts.
+Section 11. Weapons Trafficking
+Selling, supplying or transporting weapons to people who are not allowed to have them.
+Penalty: 30 to 45 minutes jail and a 15,000 to 25,000 SB fine. The weapons are seized.
+Section 12. Organized Crime
+Leading or knowingly taking part in a group that repeatedly commits crimes for profit.
+Penalty: 30 to 60 minutes jail and a 15,000 to 25,000 SB fine. Money and property gained through the group's crimes may be seized.
+Section 13. Attacks on Government Property and Emergency Services
+Deliberately attacking or damaging a police station, fire station, hospital, government building or emergency vehicle, or attacking an emergency worker on duty.
+Penalty: 30 to 60 minutes jail and a 10,000 to 25,000 SB fine.
+Section 14. Treason
+Attempting to overthrow or take control of the government of the Republic by force.
+Penalty: 60 minutes jail and a 25,000 SB fine. The offender may also be barred from holding any public office.
+Section 15. Applying Federal Offences
+Federal offences apply only to conduct that happens after this Article is published, as required by Article VIII, Section 1.
+A person may be charged with a federal offence and a city offence for the same incident only where they are separate acts, as required by Article VIII, Section 5.
+Police may issue the fine as a ticket on stiltoncounty.org. Jail time is set by an authorized judge.
+
 End of the Constitution of Stilton City
 All city laws, departments, and public officials are subordinate to this Constitution. No person is above the law.
