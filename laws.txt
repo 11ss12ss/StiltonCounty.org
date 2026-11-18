@@ -158,25 +158,25 @@ Assault, meaning attacking or physically harming another person, is illegal. Pen
 Section 3. Theft
 Theft, meaning stealing another person's property, is illegal. Penalty: [10 mins jail and a 2,250 SB fine].
 Section 4. Robbery
-Robbery, meaning taking property from a person by force or threat, is illegal. Penalty: [15 min jail and a 1,500 fine].
+Robbery, meaning taking property from a person by force or threat, is illegal. Penalty: [15 min jail and a 1,500 SB fine].
 Section 5. Vehicle theft
 Stealing a vehicle is illegal. Penalty: [10 mins jail and a 2,250 SB fine].
 Section 6. Speeding
 Driving over the speed limit is illegal. Penalty: [150-5000 SB fine].
 Section 7. Reckless driving
-Driving recklessly or dangerously is illegal. Penalty: [PUT YOUR PENALTY HERE].
+Driving recklessly or dangerously is illegal. Penalty: [750 SB fine] (see Article XIV, Section 1).
 Section 8. Driving without a license
-Driving with an inactive license is illegal. Penalty: [PUT YOUR PENALTY HERE].
+Driving with an inactive license is illegal. Penalty: [500 SB fine] (see Article XIV, Section 3).
 Section 9. Evading police
-Fleeing from or refusing to stop for police is illegal. Penalty: [PUT YOUR PENALTY HERE].
+Fleeing from or refusing to stop for police is illegal. Penalty: [1,000 SB fine and arrest] (see Article XIV, Section 3).
 Section 10. Carrying a weapon
-Carrying a weapon is allowed only with a weapons permit. Penalty for carrying without one: [PUT YOUR PENALTY HERE].
+Carrying a weapon is allowed only with a weapons permit. Penalty for carrying without one: [1,000 SB fine] (see Article XIV, Section 4).
 Section 11. Trespassing
-Entering private property without permission is illegal. Penalty: [PUT YOUR PENALTY HERE].
+Entering private property without permission is illegal. Penalty: [400 SB fine] (see Article XIV, Section 2).
 Section 12. Resisting arrest
-Resisting a lawful arrest is illegal. Penalty: [PUT YOUR PENALTY HERE].
+Resisting a lawful arrest is illegal. Penalty: [600 SB fine] (see Article XIV, Section 4).
 Section 13. Bribery
-Offering or taking a bribe from a public official is illegal. Penalty: [PUT YOUR PENALTY HERE].
+Offering or taking a bribe from a public official is illegal. Penalty: [20 to 40 minutes jail and a 10,000 to 20,000 SB fine] (see Article XV, Section 7).
 
 Article XIV  Police Violations and Fines
 Issued by the Stilton City Police Department (document reference SCRP-VF-001). This schedule lists the fines officers may issue. All fines are in SB. Where a penalty says "Warning or", the officer may give a warning instead of a fine.
