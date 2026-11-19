@@ -1,5 +1,5 @@
 /* ROS Website - privacy notice, cookie banner and visitor IP log.
- * Load AFTER app.js:  <script src="privacy-notice.js?v=8"></script>
+ * Load AFTER app.js:  <script src="privacy-notice.js?v=9"></script>
  *
  * - Shows a cookie / privacy banner until the visitor clicks "Got it".
  * - A small "Privacy" button (bottom-center) reopens the full disclaimer at any time.
@@ -15,6 +15,7 @@
   const LOGGED_KEY = "ros_ip_logged_day";
   const SECURITY_KEY = "ros_security_update_2026_11";   // change to show a new security bar
   const CONTACT = "a staff member on our Discord";
+  const DISCORD_URL = "https://discord.gg/zzSAyDFReg";   // invite link for the Discord button in the menu
 
   // ---------------- storage helpers (never throw) ----------------
   const store = {
@@ -202,6 +203,16 @@
         if (b.style.display !== want) b.style.display = want;
       }
     });
+    // Discord invite button for everyone (people must join the Discord to log in).
+    // Skipped when the menu is empty (ban screen / site shut down).
+    if (nav.querySelector("button[data-k]") && !nav.querySelector("button[data-discord]")) {
+      const d = document.createElement("button");
+      d.setAttribute("data-discord", "");
+      d.textContent = "Discord";
+      d.title = "Join the Republic of Stilton Discord";
+      d.onclick = () => window.open(DISCORD_URL, "_blank", "noopener");
+      nav.appendChild(d);
+    }
   }
   function watchModsTab() {
     const nav = document.getElementById("nav");
